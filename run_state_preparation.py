@@ -61,17 +61,30 @@ def generate_states():
             pickle.dump(states, f)
 
 
+def merge_state_files():
+    num_qubits = np.array(list(range(3, 12)))
+    num_amplitudes = 2 ** (num_qubits - 1)
+    merged = {}
+    for n, m in zip(num_qubits, num_amplitudes):
+        file_path = f"data/qubits_{n}/m_{m}/states.pkl"
+        with open(file_path, "rb") as f:
+            state_list = pickle.load(f)
+        merged[f"qubits_{n}_amplitudes_{m}"] = state_list
+    with open("states_merged.pkl", "wb") as f:
+        pickle.dump(merged, f)
+
+
 def run_prepare_state():
     method = "walks"
     # path_finder = PathFinderLinear()
     path_finder = PathFinderSHP()
     # path_finder = PathFinderMST()
-    # num_qubits_all = np.array([11])
-    num_qubits_all = np.array(list(range(3, 12)))
+    num_qubits_all = np.array([11])
+    # num_qubits_all = np.array(list(range(3, 12)))
     num_amplitudes_all = 2 ** (num_qubits_all - 1)
-    out_col_name = "shp"
+    out_col_name = "shp_reduced"
     num_workers = 20
-    reduce_controls = False
+    reduce_controls = True
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
@@ -85,12 +98,6 @@ def run_prepare_state():
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
 
-        cx_counts_file_path = os.path.join(data_folder, "cx_counts.csv")
-        if os.path.isfile(cx_counts_file_path):
-            df = pd.read_csv(cx_counts_file_path)
-        else:
-            df = pd.DataFrame()
-
         results = []
         if num_workers == 1:
             for result in tqdm(map(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
@@ -100,11 +107,14 @@ def run_prepare_state():
                 for result in tqdm(pool.imap(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
                     results.append(result)
 
+        cx_counts_file_path = os.path.join(data_folder, "cx_counts.csv")
+        df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
         df[out_col_name] = results
         df.to_csv(cx_counts_file_path, index=False)
         print(f"Avg CX: {np.mean(df[out_col_name])}\n")
 
 
 if __name__ == "__main__":
-    generate_states()
+    # generate_states()
     # run_prepare_state()
+    merge_state_files()
