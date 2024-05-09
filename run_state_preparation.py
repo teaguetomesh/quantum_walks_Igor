@@ -40,8 +40,8 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
 
 
 def generate_states():
-    num_qubits = np.array(list(range(3, 12)))
-    num_amplitudes = 2 ** (num_qubits - 1)
+    num_qubits = np.array(list(range(4, 12)))
+    num_amplitudes = num_qubits ** 2
     num_states = 1000
 
     for n, m in zip(num_qubits, num_amplitudes):
@@ -75,14 +75,14 @@ def merge_state_files():
 
 
 def run_prepare_state():
-    method = "walks"
+    method = "qiskit"
     # path_finder = PathFinderLinear()
     path_finder = PathFinderSHP()
     # path_finder = PathFinderMST()
-    num_qubits_all = np.array([11])
-    # num_qubits_all = np.array(list(range(3, 12)))
-    num_amplitudes_all = 2 ** (num_qubits_all - 1)
-    out_col_name = "shp_reduced"
+    # num_qubits_all = np.array([11])
+    num_qubits_all = np.array(list(range(4, 12)))
+    num_amplitudes_all = num_qubits_all ** 2
+    out_col_name = "qiskit"
     num_workers = 20
     reduce_controls = True
     check_fidelity = True
@@ -116,5 +116,5 @@ def run_prepare_state():
 
 if __name__ == "__main__":
     # generate_states()
-    # run_prepare_state()
-    merge_state_files()
+    # merge_state_files()
+    run_prepare_state()

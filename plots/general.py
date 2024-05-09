@@ -133,4 +133,4 @@ def save_figure(file_name: str = None):
     :return: None.
     """
     file_name = inspect.currentframe().f_back.f_code.co_name[5:] if file_name is None else file_name
-    plt.savefig(f'plots/out/{file_name}.jpg', dpi=300, bbox_inches='tight')
+    plt.savefig(f'out/{file_name}.jpg', dpi=300, bbox_inches='tight')
