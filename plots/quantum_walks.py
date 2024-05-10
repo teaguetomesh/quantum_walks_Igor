@@ -20,10 +20,10 @@ def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num
 
 
 def plot_cx_count_vs_num_qubits():
-    methods_all = [["shp_reduced", "qiskit", "shp"], ["shp_reduced", "qiskit"]]
-    labels_all = [["SHP", "Qiskit", "SHP w/o CR"], None]
-    num_qubits_all = [np.array(range(3, 12)), np.array(range(3, 9))]
-    num_amplitudes_all = [num_qubits_all[0], 2 ** (num_qubits_all[1] - 1)]
+    methods_all = [["shp_reduced", "qiskit", "shp"], ["shp_reduced", "qiskit"], ["shp_reduced", "qiskit"]]
+    labels_all = [["SHP", "Qiskit", "SHP w/o CR"], None, None]
+    num_qubits_all = [np.array(range(3, 12)), np.array(range(5, 12)), np.array(range(3, 9))]
+    num_amplitudes_all = [num_qubits_all[0], num_qubits_all[1] ** 2, 2 ** (num_qubits_all[2] - 1)]
     figure_id = 0
 
     for density_ind in range(len(num_qubits_all)):
