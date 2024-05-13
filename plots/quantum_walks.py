@@ -16,13 +16,13 @@ def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num
         data.append(np.mean(df[method]))
 
     line = Line(num_qubits, data, color=color_ind, marker=marker_ind, label=label)
-    plot_general([line], ("n", "CX"), boundaries=(None, None, None, 5000), figure_id=figure_id)
+    plot_general([line], ("n", "CX"), boundaries=(5, None, 10, 10 ** 4), figure_id=figure_id)
 
 
 def plot_cx_count_vs_num_qubits():
     methods_all = [["shp_reduced", "qiskit", "shp"], ["shp_reduced", "qiskit"], ["shp_reduced", "qiskit"]]
     labels_all = [["SHP", "Qiskit", "SHP w/o CR"], None, None]
-    num_qubits_all = [np.array(range(3, 12)), np.array(range(5, 12)), np.array(range(3, 9))]
+    num_qubits_all = [np.array(range(5, 12)), np.array(range(5, 12)), np.array(range(5, 10))]
     num_amplitudes_all = [num_qubits_all[0], num_qubits_all[1] ** 2, 2 ** (num_qubits_all[2] - 1)]
     figure_id = 0
 
@@ -34,6 +34,7 @@ def plot_cx_count_vs_num_qubits():
         for method_ind, method in enumerate(methods):
             label = labels[method_ind] if labels is not None else "_nolabel_"
             plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, method_ind, density_ind, label, figure_id)
+    plt.yscale("log")
     save_figure()
 
 

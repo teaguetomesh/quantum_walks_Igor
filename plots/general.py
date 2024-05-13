@@ -12,7 +12,7 @@ from numpy import ndarray
 colors = [(0, 0, 1), (1, 0, 0), (0, 0.5, 0), (0, 0, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
 colors += distinctipy.get_colors(10, colors + [(1, 1, 1)])
 markers = 'o*Xvs'
-marker_sizes = {'o': 5, '*': 8, 'X': 5, 'v': 5, 's': 5, 'none': 0}
+marker_sizes = {'o': 5, '*': 8, 'X': 7, 'v': 5, 's': 5, 'none': 0}
 styles = ['-', '--']
 
 
