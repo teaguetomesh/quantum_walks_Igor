@@ -62,7 +62,6 @@ def test_general():
     optimization_level = 3
 
     def exec_state(target_state, path_finder):
-        path_finder = PathFinderSHP()
         path = path_finder.get_path(target_state)
         circuit = PathConverter.convert_path_to_circuit(path, reduce_controls)
         circuit = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
