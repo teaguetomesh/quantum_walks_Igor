@@ -44,6 +44,15 @@ def get_fidelity(state1, state2) -> float:
     """
     return abs(state1.conjugate().T @ state2) ** 2
 
+def exec_state(target_state, path_finder, reduce_controls, optimization_level=3):
+    path = path_finder.get_path(target_state)
+    circuit = PathConverter.convert_path_to_circuit(path, reduce_controls)
+    circuit = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
+    output_state_vector = execute_circuit(circuit)
+    target_state_vector = get_state_vector(target_state)
+    fidelity = get_fidelity(output_state_vector, target_state_vector)
+    return fidelity
+
 def test_general():
     # end to end test.
     random_state1={"00": 1/np.sqrt(2), "11": 1/np.sqrt(2)}
@@ -58,25 +67,25 @@ def test_general():
     state_list=[random_state1,random_state2,random_state3,random_state4,
             random_state5,random_state6,random_state7,random_state8, random_state9]
     fidelity_tol = 1e-8
-    reduce_controls = True
-    optimization_level = 3
-
-    def exec_state(target_state, path_finder):
-        path = path_finder.get_path(target_state)
-        circuit = PathConverter.convert_path_to_circuit(path, reduce_controls)
-        circuit = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
-        output_state_vector = execute_circuit(circuit)
-        target_state_vector = get_state_vector(target_state)
-        fidelity = get_fidelity(output_state_vector, target_state_vector)
-        return fidelity
 
     for target_state in state_list:
         #SHP
-        fidelity = exec_state(target_state, PathFinderSHP())
-        assert abs(1 - fidelity) < fidelity_tol, f"SHP Failed to prepare the state: {target_state}. Fidelity: {fidelity}"
+        reduce_controls = True
+        fidelity = exec_state(target_state, PathFinderSHP(), reduce_controls)
+        assert abs(1 - fidelity) < fidelity_tol, f"SHP + cntrl reduction failed to prepare the state: {target_state}. Fidelity: {fidelity}"
         #Linear
-        fidelity = exec_state(target_state, PathFinderLinear())
-        assert abs(1 - fidelity) < fidelity_tol, f"Linear Failed to prepare the state: {target_state}. Fidelity: {fidelity}"
+        fidelity = exec_state(target_state, PathFinderLinear(), reduce_controls)
+        assert abs(1 - fidelity) < fidelity_tol, f"Linear + cntrl reduction failed to prepare the state: {target_state}. Fidelity: {fidelity}"
         #MST
-        fidelity = exec_state(target_state, PathFinderMST())
-        assert abs(1 - fidelity) < fidelity_tol, f"MST Failed to prepare the state: {target_state}. Fidelity: {fidelity}"
+        fidelity = exec_state(target_state, PathFinderMST(), reduce_controls)
+        assert abs(1 - fidelity) < fidelity_tol, f"MST + cntrl reduction failed to prepare the state: {target_state}. Fidelity: {fidelity}"
+        #SHP
+        reduce_controls = False
+        fidelity = exec_state(target_state, PathFinderSHP(), reduce_controls)
+        assert abs(1 - fidelity) < fidelity_tol, f"SHP failed to prepare the state: {target_state}. Fidelity: {fidelity}"
+        #Linear
+        fidelity = exec_state(target_state, PathFinderLinear(), reduce_controls)
+        assert abs(1 - fidelity) < fidelity_tol, f"Linear failed to prepare the state: {target_state}. Fidelity: {fidelity}"
+        #MST
+        fidelity = exec_state(target_state, PathFinderMST(), reduce_controls)
+        assert abs(1 - fidelity) < fidelity_tol, f"MST failed to prepare the state: {target_state}. Fidelity: {fidelity}"
