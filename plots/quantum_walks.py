@@ -16,11 +16,21 @@ def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num
         df = pd.read_csv(data_path)
         data.append(np.mean(df[method]))
 
-    line = Line(num_qubits, data, color=color_ind, marker=marker_ind)
-    plot_general([line], label=label, figure_id=figure_id)
+    line = Line(num_qubits, data, color=color_ind, marker=marker_ind, label=label)
+    plot_general([line], ("n", "CX"), boundaries=(4.75, 11.25, 10, 10 ** 4), figure_id=figure_id)
+    plt.yscale("log")
 
 
-def plot_cx_count_vs_num_qubits():
+def plot_control_reduction_effect():
+    num_qubits = np.array(range(5, 12))
+    num_amplitudes = num_qubits
+    figure_id = 0
+    plot_cx_count_vs_num_qubits_line("random_reduced", num_qubits, num_amplitudes, 0, 0, "With control reduction", figure_id)
+    plot_cx_count_vs_num_qubits_line("random", num_qubits, num_amplitudes, 1, 0, "Without control reduction", figure_id)
+    save_figure()
+
+
+def plot_qiskit_comparison():
     methods_all = ["shp_reduced", "qiskit"]
     densities_all = [lambda n: n, lambda n: n ** 2, lambda n: 2 ** (n - 1)]
     figure_id = 0
@@ -34,23 +44,17 @@ def plot_cx_count_vs_num_qubits():
             num_amplitudes = [densities_all[density_ind](n) for n in num_qubits]
             plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, density_ind, method_ind, "_nolabel_", figure_id)
 
-    plt.xlabel = "n"
-    plt.ylabel = "CX"
-    plt.xlim(left=4.75)
-    plt.ylim(bottom=10, top=10 ** 4)
-    plt.yscale("log")
-
     circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=5, label="Quantum Walks")
     star_marker = Line2D([0], [0], linestyle="", color="k", marker="*", markersize=8, label="Qiskit")
     blue_line = Line2D([0], [0], color="b", label=r"$m = n$")
     red_line = Line2D([0], [0], color="r", label=r"$m = n^2$")
     green_line = Line2D([0], [0], color="g", label=r"$m = 2^{n-1}$")
     plt.legend(handles=[circle_marker, star_marker, blue_line, red_line, green_line])
-
     save_figure()
 
 
 if __name__ == "__main__":
-    plot_cx_count_vs_num_qubits()
+    # plot_control_reduction_effect()
+    plot_qiskit_comparison()
 
     plt.show()
