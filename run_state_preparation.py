@@ -83,9 +83,9 @@ def run_prepare_state():
     # num_qubits_all = np.array([11])
     num_qubits_all = np.array(list(range(5, 12)))
     num_amplitudes_all = num_qubits_all
-    out_col_name = "random"
+    out_col_name = "random_reduced"
     num_workers = 20
-    reduce_controls = False
+    reduce_controls = True
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
