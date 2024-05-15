@@ -104,6 +104,15 @@ class PathFinder(ABC):
         return self.get_path_segments(travel_graph, zero_amplitude_label)
 
 
+class PathFinderRandom(PathFinder):
+    """ Connects the states via a random tree. """
+    def build_travel_graph(self, bases: list[str]) -> Graph:
+        random_tree = nx.generators.random_tree(len(bases))
+        random_tree = nx.relabel_nodes(random_tree, {i: bases[i] for i in range(len(bases))})
+        random_tree.graph["start"] = bases[0]
+        return random_tree
+
+
 class PathFinderLinear(PathFinder):
     """ Goes through the states in the same order they are listed in. """
     def build_travel_graph(self, bases: list[str]) -> Graph:
