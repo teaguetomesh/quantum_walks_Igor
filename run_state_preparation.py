@@ -10,7 +10,7 @@ from qiskit import transpile, QuantumCircuit
 from qiskit.quantum_info import random_statevector, Statevector
 from tqdm import tqdm
 
-from src.quantum_walks import PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST
+from src.quantum_walks import PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 from src.walks_gates_conversion import PathConverter
 
@@ -76,15 +76,16 @@ def merge_state_files():
 
 def run_prepare_state():
     method = "walks"
+    path_finder = PathFinderRandom()
     # path_finder = PathFinderLinear()
-    path_finder = PathFinderSHP()
+    # path_finder = PathFinderSHP()
     # path_finder = PathFinderMST()
     # num_qubits_all = np.array([11])
     num_qubits_all = np.array(list(range(5, 12)))
-    num_amplitudes_all = num_qubits_all ** 2
-    out_col_name = "shp_reduced"
+    num_amplitudes_all = num_qubits_all
+    out_col_name = "random"
     num_workers = 20
-    reduce_controls = True
+    reduce_controls = False
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
