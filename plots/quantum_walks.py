@@ -30,6 +30,18 @@ def plot_control_reduction_effect():
     save_figure()
 
 
+def plot_walk_order_comparison():
+    num_qubits = np.array(range(5, 11))
+    num_amplitudes = num_qubits
+    figure_id = 0
+    methods = ["random", "linear", "shp", "mst"]
+    for method_ind, method in enumerate(methods):
+        plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, method_ind, 0, method, figure_id)
+    plt.yscale("linear")
+    plt.ylim(top=3000)
+    save_figure()
+
+
 def plot_qiskit_comparison():
     methods_all = ["shp_reduced", "qiskit"]
     densities_all = [lambda n: n, lambda n: n ** 2, lambda n: 2 ** (n - 1)]
@@ -55,6 +67,7 @@ def plot_qiskit_comparison():
 
 if __name__ == "__main__":
     # plot_control_reduction_effect()
-    plot_qiskit_comparison()
+    plot_walk_order_comparison()
+    # plot_qiskit_comparison()
 
     plt.show()
