@@ -1,6 +1,8 @@
 """ Functions that generate quantum walks. """
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import combinations
 
 import networkx as nx
 import numpy as np
@@ -51,24 +53,39 @@ class PathFinder(ABC):
             graph.nodes[edge[0]]["target_prob"] += graph.nodes[edge[1]]["target_prob"]
 
     @staticmethod
-    def find_zero_amplitude(target_state: dict[str, complex]) -> str | None:
+    def get_hamming_generator(target_str: str) -> Iterator[str]:
+        """
+        Generates bit strings in the order of the Hamming distance to the target bit string.
+        :param target_str: Target bit string.
+        :return: Bit string generator.
+        """
+        all_inds = list(range(len(target_str)))
+        for current_distance in range(1, len(target_str) + 1):
+            for combo in combinations(all_inds, current_distance):
+                next_str = np.array(list(map(int, target_str)))
+                next_str[combo] = 1 - next_str[combo]
+                next_str = "".join(map(str, next_str))
+                yield next_str
+        raise StopIteration
+
+    @staticmethod
+    def find_closest_zero_amplitude(target_state: dict[str, complex], target_basis: str) -> str | None:
         """
         Finds a basis state that is not a part of the target state.
-        :param target_state: List of basis states with non-zero amplitude in the target state.
-        :return: Any basis state that has zero amplitude in the target state.
+        :param target_state: Dict of basis states with non-zero amplitude in the target state.
+        :param target_basis: Target basis state around which the zero amplitude state will be searched.
+        :return: Closest to the target basis state with zero amplitude.
         """
-        num_qubits = len(next(iter(target_state.keys())))
-        for i in range(2 ** num_qubits):
-            basis_label = format(i, f"0{num_qubits}b")
-            if basis_label not in target_state:
-                return basis_label
+        for state in PathFinder.get_hamming_generator(target_basis):
+            if state not in target_state:
+                return state
         return None
 
-    def get_path_segments(self, graph: Graph, zero_amplitude_state: str) -> list[PathSegment]:
+    def get_path_segments(self, graph: Graph, target_state: dict[str, complex]) -> list[PathSegment]:
         """
         Returns a list of path segments describing state preparation path.
         :param graph: Travel graph.
-        :param zero_amplitude_state: Label of a basis state that is not a part of the target state.
+        :param target_state: Dict of non-zero amplitudes in the target state.
         :return: List of path segments.
         """
         tol = 1e-10
@@ -89,7 +106,8 @@ class PathFinder(ABC):
             if graph.degree(edge[1]) == 1:
                 phase_walk_time = (1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
                 graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
-                path.append(PathSegment((edge[1], zero_amplitude_state), phase_walk_time, 0))
+                closest_zero_state = PathFinder.find_closest_zero_amplitude(target_state, edge[1])
+                path.append(PathSegment((edge[1], closest_zero_state), phase_walk_time, 0))
         return path
 
     def get_path(self, target_state: dict[str, complex]) -> list[PathSegment]:
@@ -100,8 +118,7 @@ class PathFinder(ABC):
         """
         travel_graph = self.build_travel_graph(list(target_state.keys()))
         self.set_graph_attributes(travel_graph, target_state)
-        zero_amplitude_label = self.find_zero_amplitude(target_state)
-        return self.get_path_segments(travel_graph, zero_amplitude_label)
+        return self.get_path_segments(travel_graph, target_state)
 
 
 class PathFinderRandom(PathFinder):
