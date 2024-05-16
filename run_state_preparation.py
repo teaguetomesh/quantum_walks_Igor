@@ -76,16 +76,16 @@ def merge_state_files():
 
 def run_prepare_state():
     method = "walks"
-    # path_finder = PathFinderRandom()
+    path_finder = PathFinderRandom()
     # path_finder = PathFinderLinear()
-    path_finder = PathFinderSHP()
+    # path_finder = PathFinderSHP()
     # path_finder = PathFinderMST()
     # num_qubits_all = np.array([11])
     num_qubits_all = np.array(list(range(5, 12)))
     num_amplitudes_all = num_qubits_all
-    out_col_name = "random_reduced"
+    out_col_name = "random"
     num_workers = 20
-    reduce_controls = True
+    reduce_controls = False
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
