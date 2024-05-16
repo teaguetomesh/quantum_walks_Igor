@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import combinations
 
+import graycode
 import networkx as nx
 import numpy as np
 from networkx import Graph
@@ -137,6 +138,23 @@ class PathFinderLinear(PathFinder):
         for i in range(len(bases) - 1):
             graph.add_edge(bases[i], bases[i + 1])
         graph.graph["start"] = bases[0]
+        return graph
+
+
+class PathFinderGrayCode(PathFinder):
+    """ Goes through the states in the order of Gray code. """
+    def build_travel_graph(self, bases: list[str]) -> Graph:
+        graph = Graph()
+        gray_code = graycode.gen_gray_codes(len(bases[0]))
+        gray_code_str = [f"{code:0{len(bases[0])}b}" for code in gray_code]
+        last_basis = None
+        for code in gray_code_str:
+            if code in bases:
+                if last_basis is None:
+                    graph.graph["start"] = code
+                else:
+                    graph.add_edge(last_basis, code)
+                last_basis = code
         return graph
 
 

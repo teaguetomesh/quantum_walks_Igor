@@ -34,9 +34,9 @@ def plot_walk_order_comparison():
     num_qubits = np.array(range(5, 12))
     num_amplitudes = num_qubits
     figure_id = 0
-    methods = ["random", "linear", "shp", "mst"]
+    methods = ["random", "linear", "shp", "mst", "graycode"]
     methods = [method + "_reduced" for method in methods]
-    labels = ["Random", "Sorted", "SHP", "MST"]
+    labels = ["Random", "Sorted", "SHP", "MST", "Gray code"]
     for method_ind, method in enumerate(methods):
         plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, method_ind, 0, labels[method_ind], figure_id)
     plt.yscale("linear")
