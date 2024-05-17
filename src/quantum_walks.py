@@ -1,6 +1,6 @@
 """ Functions that generate quantum walks. """
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 
@@ -131,10 +131,15 @@ class PathFinderRandom(PathFinder):
         return random_tree
 
 
+@dataclass
 class PathFinderLinear(PathFinder):
     """ Goes through the states in the same order they are listed in. """
+    order: Sequence[int] = None
+
     def build_travel_graph(self, bases: list[str]) -> Graph:
         graph = Graph()
+        if self.order is not None:
+            bases = np.array(bases)[self.order]
         for i in range(len(bases) - 1):
             graph.add_edge(bases[i], bases[i + 1])
         graph.graph["start"] = bases[0]
