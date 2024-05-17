@@ -2,6 +2,7 @@ import os.path
 import pickle
 import random
 from functools import partial
+from itertools import permutations
 from multiprocessing import Pool
 
 import numpy as np
@@ -78,13 +79,13 @@ def run_prepare_state():
     method = "walks"
     # path_finder = PathFinderRandom()
     # path_finder = PathFinderLinear()
-    path_finder = PathFinderGrayCode()
+    # path_finder = PathFinderGrayCode()
     # path_finder = PathFinderSHP()
-    # path_finder = PathFinderMST()
-    # num_qubits_all = np.array([11])
-    num_qubits_all = np.array(list(range(5, 12)))
+    path_finder = PathFinderMST()
+    num_qubits_all = np.array([5])
+    # num_qubits_all = np.array(list(range(5, 12)))
     num_amplitudes_all = num_qubits_all
-    out_col_name = "graycode_reduced"
+    out_col_name = "mst_reduced"
     num_workers = 20
     reduce_controls = True
     check_fidelity = True
@@ -116,7 +117,35 @@ def run_prepare_state():
         print(f"Avg CX: {np.mean(df[out_col_name])}\n")
 
 
+def bruteforce_orders():
+    method = "walks"
+    num_qubits_all = 5
+    num_amplitudes_all = num_qubits_all
+    reduce_controls = True
+    check_fidelity = True
+    optimization_level = 3
+    basis_gates = ["rx", "ry", "rz", "h", "cx"]
+
+    states_file_path = f"data/qubits_{num_qubits_all}/m_{num_amplitudes_all}/states.pkl"
+    with open(states_file_path, "rb") as f:
+        state_list = pickle.load(f)
+
+    path_finder = PathFinderLinear([0, 4, 1, 2, 3])
+    # path_finder = PathFinderLinear([0, 2, 4, 1, 3])
+    cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
+
+    all_permutations = list(permutations(range(num_amplitudes_all), num_amplitudes_all))
+    results = []
+    for perm in all_permutations:
+        path_finder = PathFinderLinear(list(perm))
+        cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
+        results.append(cx_count)
+
+    print(f"Min CX: {np.min(results)}\n")
+
+
 if __name__ == "__main__":
     # generate_states()
     # merge_state_files()
     run_prepare_state()
+    # bruteforce_orders()
