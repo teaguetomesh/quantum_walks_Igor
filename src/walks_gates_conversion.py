@@ -1,6 +1,7 @@
 """ Module for converting quantum walks to circuit representation. """
 import copy
 
+import numpy as np
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
@@ -57,30 +58,23 @@ class PathConverter:
         for segment in path:
             origin = [int(char) for char in segment.labels[0]]
             destination = [int(char) for char in segment.labels[1]]
-            z1 = copy.deepcopy(origin)
-            z2 = copy.deepcopy(destination)
-            if z1.count(1) > z2.count(1):
-                z1, z2 = z2, z1
-
-            zero_inds_z1 = [ind for ind, elem in enumerate(z1) if elem == 0]
-            zero_inds_z2 = [ind for ind, elem in enumerate(z2) if elem == 0]
-            interaction_ind = list(set(zero_inds_z1) - set(zero_inds_z2))[0]  # Gets the first nonzero index for z2 that's a zero for z1.
-            zero_inds_z1.remove(interaction_ind)  # we will use this as a control to turn the z2 to all ones without affecting z1.
-            for zero_ind in zero_inds_z1:
-                qc.x(zero_ind)
-                z2[zero_ind] = 1 - z2[zero_ind]
+            diff_inds = np.where(np.array(origin) != np.array(destination))[0]
+            interaction_ind = diff_inds[0]
 
             visited_transformed = copy.deepcopy(visited)
-            zero_inds_z2 = [ind for ind, elem in enumerate(z2) if elem == 0]
-            for zero_ind in zero_inds_z2:
-                qc.cx(interaction_ind, zero_ind)
-                PathConverter.update_visited(visited_transformed, interaction_ind, zero_ind)
+            for ind in diff_inds[1:]:
+                qc.cx(interaction_ind, ind)
+                PathConverter.update_visited(visited_transformed, interaction_ind, ind)
 
             origin_ind = visited.index(origin)
             if reduce_controls:
                 control_indices = PathConverter.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
             else:
-                control_indices = [ind for ind in range(len(z1)) if ind != interaction_ind]
+                control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
+
+            for ind in control_indices:
+                if visited_transformed[origin_ind][ind] == 0:
+                    qc.x(ind)
 
             rz_angle = 2 * segment.phase_time
             if origin[interaction_ind] == 1:
@@ -99,10 +93,12 @@ class PathConverter:
                 qc.append(rx_gate, control_indices + [interaction_ind])
                 visited.append(destination)
 
-            for zero_ind in reversed(zero_inds_z2):
-                qc.cx(interaction_ind, zero_ind)
-            for zero_ind in zero_inds_z1:
-                qc.x(zero_ind)
+            for ind in control_indices:
+                if visited_transformed[origin_ind][ind] == 0:
+                    qc.x(ind)
+
+            for ind in reversed(diff_inds[1:]):
+                qc.cx(interaction_ind, ind)
             # qc.barrier()
 
         return qc
