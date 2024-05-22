@@ -16,8 +16,8 @@ from src.validation import execute_circuit, get_state_vector, get_fidelity
 from src.walks_gates_conversion import PathConverter
 
 
-def prepare_state(target_state: dict[str, complex], method: str, path_finder: PathFinder, basis_gates: list[str], optimization_level: int, check_fidelity: bool = True,
-                  fidelity_tol: float = 1e-8, reduce_controls: bool = True) -> int:
+def prepare_state(target_state: dict[str, complex], method: str, path_finder: PathFinder, basis_gates: list[str], optimization_level: int, check_fidelity: bool,
+                  reduce_controls: bool, remove_leading_cx: bool, add_barriers: bool, fidelity_tol: float = 1e-8) -> int:
     if method == "qiskit":
         target_state_vector = get_state_vector(target_state)
         num_qubits = len(next(iter(target_state.keys())))
@@ -25,7 +25,7 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
         circuit.prepare_state(target_state_vector)
     elif method == "walks":
         path = path_finder.get_path(target_state)
-        circuit = PathConverter.convert_path_to_circuit(path, reduce_controls)
+        circuit = PathConverter.convert_path_to_circuit(path, reduce_controls, remove_leading_cx, add_barriers)
     else:
         raise Exception("Unknown method")
     circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
@@ -80,19 +80,21 @@ def run_prepare_state():
     # path_finder = PathFinderRandom()
     # path_finder = PathFinderLinear()
     # path_finder = PathFinderGrayCode()
-    # path_finder = PathFinderSHP()
-    path_finder = PathFinderMST()
-    num_qubits_all = np.array([5])
-    # num_qubits_all = np.array(list(range(5, 12)))
+    path_finder = PathFinderSHP()
+    # path_finder = PathFinderMST()
+    # num_qubits_all = np.array([5])
+    num_qubits_all = np.array(list(range(5, 12)))
     num_amplitudes_all = num_qubits_all
-    out_col_name = "mst_reduced"
+    out_col_name = "shp_reduced"
     num_workers = 20
     reduce_controls = True
     check_fidelity = True
+    remove_leading_cx = True
+    add_barriers = False
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
     process_func = partial(prepare_state, method=method, path_finder=path_finder, basis_gates=basis_gates, optimization_level=optimization_level, check_fidelity=check_fidelity,
-                           reduce_controls=reduce_controls)
+                           reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx, add_barriers=add_barriers)
 
     for num_qubits, num_amplitudes in zip(num_qubits_all, num_amplitudes_all):
         print(f"Num qubits: {num_qubits}; num amplitudes: {num_amplitudes}")
@@ -130,8 +132,9 @@ def bruteforce_orders():
     with open(states_file_path, "rb") as f:
         state_list = pickle.load(f)
 
-    path_finder = PathFinderLinear([0, 4, 1, 2, 3])
+    # path_finder = PathFinderLinear([0, 4, 1, 2, 3])
     # path_finder = PathFinderLinear([0, 2, 4, 1, 3])
+    path_finder = PathFinderGrayCode()
     cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
 
     all_permutations = list(permutations(range(num_amplitudes_all), num_amplitudes_all))
