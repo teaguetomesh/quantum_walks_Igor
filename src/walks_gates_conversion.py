@@ -5,6 +5,7 @@ import numpy as np
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 
 from src.quantum_walks import PathSegment
 
@@ -40,11 +41,37 @@ class PathConverter:
         return hitman.get()
 
     @staticmethod
-    def convert_path_to_circuit(path: list[PathSegment], reduce_controls: bool = True) -> QuantumCircuit:
+    def remove_leading_cx(qc: QuantumCircuit) -> QuantumCircuit:
+        """
+        Removes leading CX gates whose controls are always false.
+        :param qc: Input quantum circuit.
+        :return: Optimized quantum circuit where the leading CX gates are removed where possible.
+        """
+        dag = circuit_to_dag(qc)
+        wires = dag.wires
+        # Go through the ops in each wire and remove cx ops until we run into a non cx operation.
+        for w in wires:
+            for node in list(dag.nodes_on_wire(w, only_ops=True)):
+                if node.name == "barrier":
+                    continue
+                elif node.name != "cx":
+                    break
+                # The control is the current wire
+                elif node.qargs[0] == w:
+                    dag.remove_op_node(node)
+                # CX but with target on qubit wire w.
+                else:
+                    break
+        return dag_to_circuit(dag)
+
+    @staticmethod
+    def convert_path_to_circuit(path: list[PathSegment], reduce_controls: bool = True, remove_leading_cx: bool = True, add_barriers: bool = False) -> QuantumCircuit:
         """
         Converts quantum walks to qiskit circuit.
         :param path: List of path segments, describing the state preparation path.
         :param reduce_controls: True to search for minimally necessary state of controls. False to use all n-1 controls (for debug purposes).
+        :param remove_leading_cx: True to remove leading CX gates whose controls are never satisfied.
+        :param add_barriers: True to insert barriers between path segments.
         :return: Implementing circuit.
         """
         starting_state = path[0].labels[0]
@@ -52,7 +79,8 @@ class PathConverter:
         indices_1 = [ind for ind, elem in enumerate(starting_state) if elem == "1"]
         for ind in indices_1:
             qc.x(ind)
-        # qc.barrier()
+        if add_barriers:
+            qc.barrier()
 
         visited = [[int(char) for char in starting_state]]
         for segment in path:
@@ -99,6 +127,10 @@ class PathConverter:
 
             for ind in reversed(diff_inds[1:]):
                 qc.cx(interaction_ind, ind)
-            # qc.barrier()
+            if add_barriers:
+                qc.barrier()
+
+        if remove_leading_cx:
+            qc = PathConverter.remove_leading_cx(qc)
 
         return qc
