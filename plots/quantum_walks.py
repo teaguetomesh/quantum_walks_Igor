@@ -5,19 +5,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
-
+import sys
+sys.path.append("../")
 from plots.general import Line, plot_general, save_figure
 
 
 def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num_amplitudes: Sequence[int], color_ind: int, marker_ind: int, label: str, figure_id: int):
     data = []
+    data_std_dev=[]
     for n, m in zip(num_qubits, num_amplitudes):
         data_path = f"../data/qubits_{n}/m_{m}/cx_counts.csv"
         df = pd.read_csv(data_path)
-        data.append(np.mean(df[method]))
+        column_dat=df[method]
+        data.append(np.mean(column_dat))
+        data_std_dev.append(np.std(column_dat))
 
     line = Line(num_qubits, data, color=color_ind, marker=marker_ind, label=label)
-    plot_general([line], ("n", "CX"), boundaries=(4.75, 11.25, 10, 10 ** 4), figure_id=figure_id)
+    plot_general([line], [data_std_dev], ("n", "CX"), boundaries=(4.75, 11.25, 10, 10 ** 4), figure_id=figure_id)
     plt.yscale("log")
 
 

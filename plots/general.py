@@ -71,11 +71,12 @@ def assign_distinct_colors(lines: list[Line]):
         lines[i].color = colors[i]
 
 
-def plot_general(lines: list[Line], axis_labels: tuple[str | None, str | None] = None, tick_multiples: tuple[float | None, float | None] = None,
+def plot_general(lines: list[Line], all_std_devs: list[np.array], axis_labels: tuple[str | None, str | None] = None, tick_multiples: tuple[float | None, float | None] = None,
                  boundaries: tuple[float | None, float | None, float | None, float | None] = None, font_size: int = 20, legend_loc: str = 'best', figure_id: int = None, **kwargs):
     """
     Plots specified list of lines.
     :param lines: List of lines.
+    :param all_std_devs: List of std. dev.
     :param axis_labels: Labels for x and y axes.
     :param tick_multiples: Base multiples for ticks along x and y axes.
     :param boundaries: x min, x max, y min, y max floats defining plot boundaries.
@@ -92,10 +93,14 @@ def plot_general(lines: list[Line], axis_labels: tuple[str | None, str | None] =
         plt.figure(figure_id)
 
     plt.rcParams.update({'font.size': font_size})
-    for line in lines:
-        plt.plot(line.xs, line.ys, color=line.color, marker=line.marker, linestyle=line.style, markersize=marker_sizes[line.marker], label=line.label)
+
+    for line, std_dev in zip(lines, all_std_devs):
+        plt.errorbar(line.xs, line.ys, yerr=std_dev, color=line.color, marker=line.marker, linestyle=line.style, 
+                     markersize=marker_sizes[line.marker], label=line.label, capsize=7.0) #capsize is the size of error bar caps
+        handles, labels=plt.gca().get_legend_handles_labels()
+        handles=[h[0] for h in handles] #strips the error bars from the legend.
         if line.label != '_nolabel_':
-            plt.legend(loc=legend_loc, draggable=True)
+            plt.legend(handles, labels, loc=legend_loc, draggable=True)
 
     if axis_labels is not None:
         if axis_labels[0] is not None:
