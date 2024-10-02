@@ -15,6 +15,8 @@ from src.quantum_walks import PathFinder, PathFinderLinear, PathFinderSHP, PathF
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 from src.walks_gates_conversion import PathConverter
 
+from qclib.state_preparation.merge import MergeInitialize
+
 
 def prepare_state(target_state: dict[str, complex], method: str, path_finder: PathFinder, basis_gates: list[str], optimization_level: int, check_fidelity: bool,
                   reduce_controls: bool, remove_leading_cx: bool, add_barriers: bool, fidelity_tol: float = 1e-8) -> int:
@@ -26,6 +28,9 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
     elif method == "walks":
         path = path_finder.get_path(target_state)
         circuit = PathConverter.convert_path_to_circuit(path, reduce_controls, remove_leading_cx, add_barriers)
+    elif method=="gleinig":
+        merger=MergeInitialize(target_state)
+        circuit=merger._define_initialize()
     else:
         raise Exception("Unknown method")
     circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
@@ -35,7 +40,7 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
         output_state_vector = execute_circuit(circuit_transpiled)
         target_state_vector = get_state_vector(target_state)
         fidelity = get_fidelity(output_state_vector, target_state_vector)
-        assert abs(1 - fidelity) < fidelity_tol, f"Failed to prepare the state. Fidelity: {fidelity}"
+        assert abs(1 - fidelity) < fidelity_tol, f"Failed to prepare the state. Fidelity: {fidelity} Target: {target_state}"
 
     return cx_count
 
@@ -76,17 +81,19 @@ def merge_state_files():
 
 
 def run_prepare_state():
-    method = "walks"
+    # method = "qiskit"
+    method = "gleinig"
     # path_finder = PathFinderRandom()
     # path_finder = PathFinderLinear()
     # path_finder = PathFinderGrayCode()
     path_finder = PathFinderSHP()
     # path_finder = PathFinderMST()
     # num_qubits_all = np.array([5])
-    num_qubits_all = np.array(list(range(5, 12)))
-    num_amplitudes_all = num_qubits_all
-    out_col_name = "shp_reduced"
-    num_workers = 20
+    num_qubits_all = np.array(list(range(11, 12)))
+    num_amplitudes_all = 2**(num_qubits_all-1) # possible values are [num_qubits_all, num_qubits_all**2, 2**(num_qubits_all-1)]
+    # out_col_name = "qiskit"
+    out_col_name = method
+    num_workers = 6
     reduce_controls = True
     check_fidelity = True
     remove_leading_cx = True
