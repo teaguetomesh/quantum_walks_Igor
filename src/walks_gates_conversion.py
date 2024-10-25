@@ -6,6 +6,7 @@ from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
 from qiskit.converters import circuit_to_dag, dag_to_circuit
+from qiskit.quantum_info import Clifford
 
 from src.quantum_walks import PathSegment
 
@@ -129,6 +130,119 @@ class PathConverter:
                 qc.cx(interaction_ind, ind)
             if add_barriers:
                 qc.barrier()
+
+        if remove_leading_cx:
+            qc = PathConverter.remove_leading_cx(qc)
+
+        return qc
+    
+
+    @staticmethod
+    def convert_path_to_circuit_pframes(path: list[PathSegment], reduce_controls: bool = True, remove_leading_cx: bool = True, add_barriers: bool = False) -> QuantumCircuit:
+        """
+        Converts quantum walks to qiskit circuit.
+        :param path: List of path segments, describing the state preparation path.
+        :param reduce_controls: True to search for minimally necessary state of controls. False to use all n-1 controls (for debug purposes).
+        :param remove_leading_cx: True to remove leading CX gates whose controls are never satisfied.
+        :param add_barriers: True to insert barriers between path segments.
+        :return: Implementing circuit.
+        """
+        starting_state = path[0].labels[0]
+        qc = QuantumCircuit(len(starting_state))
+        indices_1 = [ind for ind, elem in enumerate(starting_state) if elem == "1"]
+        for ind in indices_1:
+            qc.x(ind)
+        if add_barriers:
+            qc.barrier()
+
+        # circuit for the ending rotations.
+        circ_end=QuantumCircuit(len(starting_state))
+
+
+        visited = [[int(char) for char in starting_state]]
+        for segment in path:
+            origin = [int(char) for char in segment.labels[0]]
+            destination = [int(char) for char in segment.labels[1]]
+            diff_inds = np.where(np.array(origin) != np.array(destination))[0]
+            diff_var_dummy=diff_inds.tolist()
+            interaction_ind = diff_inds[0]
+            # print("diffs: ", diff_var_dummy)
+
+            visited_transformed = copy.deepcopy(visited)
+            # print("visited: ", visited)
+            # print("destination: ", destination)
+            for ind in diff_inds[1:]:
+                qc.cx(interaction_ind, ind)
+                PathConverter.update_visited(visited_transformed, interaction_ind, ind)
+
+            origin_ind = visited.index(origin)
+            if reduce_controls:
+                control_indices = PathConverter.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+            else:
+                control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
+
+            for ind in control_indices:
+                if visited_transformed[origin_ind][ind] == 0:
+                    qc.x(ind)
+
+            rz_angle = 2 * segment.phase_time
+            if origin[interaction_ind] == 1:
+                rz_angle *= -1
+            if rz_angle != 0:
+                rz_gate = RZGate(rz_angle)
+                if len(control_indices) > 0:
+                    rz_gate = rz_gate.control(len(control_indices))
+                qc.append(rz_gate, control_indices + [interaction_ind])
+
+            rx_angle = 2 * segment.amplitude_time
+            if rx_angle != 0:
+                rx_gate = RXGate(rx_angle)
+                if len(control_indices) > 0:
+                    rx_gate = rx_gate.control(len(control_indices))
+                qc.append(rx_gate, control_indices + [interaction_ind])
+                # visited.append(destination)
+
+            # update the set of visited
+            for ind in diff_inds[1:]:
+                destination_transformed=[destination]
+                PathConverter.update_visited(destination_transformed, interaction_ind, ind)
+                destination=destination_transformed[0]
+                # update the target state.
+                for segment in path:
+                    z1=[[int(char) for char in segment.labels[0]]]
+                    z2=[[int(char) for char in segment.labels[1]]]
+                    PathConverter.update_visited(z1, interaction_ind, ind)
+                    PathConverter.update_visited(z2, interaction_ind, ind)
+                    segment.labels[0]="".join(list(map(str,z1[0])))
+                    segment.labels[1]="".join(list(map(str,z2[0])))
+            visited_transformed.append(destination)
+            visited=visited_transformed
+            # print("visited transformed: ", visited_transformed)
+
+            for ind in control_indices:
+                if visited_transformed[origin_ind][ind] == 0:
+                    qc.x(ind)
+
+            # for ind in reversed(diff_inds[1:]):
+            #     qc.cx(interaction_ind, ind)
+
+            for ind in diff_inds[1:]:
+                circ_end.cx(interaction_ind, ind)
+                # circ_end.barrier()
+
+            # for ind in control_indices:
+            #     if visited_transformed[origin_ind][ind] == 0:
+            #         circ_end.x(ind)            
+
+            if add_barriers:
+                qc.barrier()
+
+        # print(qc)
+        # qc.barrier()
+        # qc.barrier()
+        qc=qc.compose(Clifford(circ_end.inverse()).to_circuit())
+        # print(circ_end)
+        # print(qc)
 
         if remove_leading_cx:
             qc = PathConverter.remove_leading_cx(qc)

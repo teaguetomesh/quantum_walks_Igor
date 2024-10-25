@@ -92,10 +92,55 @@ def plot_gleinig_comparison():
     plt.legend(handles=[circle_marker, star_marker, blue_line, red_line, green_line])
     save_figure()
 
+def plot_gleinigwalk_gleinig_comparison():
+    methods_all = ["gleinig_qwalk", "gleinig"]
+    densities_all = [lambda n: n]#, lambda n: n ** 2, lambda n: 2 ** (n - 1)]
+    figure_id = 0
+
+    for method_ind, method in enumerate(methods_all):
+        for density_ind, density in enumerate(densities_all):
+            if method == "gleinig_qwalk" and density_ind == 2:
+                num_qubits = np.array(range(5, 10))
+            else:
+                num_qubits = np.array(range(5, 12))
+            num_amplitudes = [densities_all[density_ind](n) for n in num_qubits]
+            plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, density_ind, method_ind, "_nolabel_", figure_id)
+
+    circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=5, label="Gleinig Walks")
+    star_marker = Line2D([0], [0], linestyle="", color="k", marker="*", markersize=8, label="Gleinig")
+    blue_line = Line2D([0], [0], color="b", label=r"$m = n$")
+    red_line = Line2D([0], [0], color="r", label=r"$m = n^2$")
+    green_line = Line2D([0], [0], color="g", label=r"$m = 2^{n-1}$")
+    plt.legend(handles=[circle_marker, star_marker, blue_line, red_line, green_line])
+    save_figure()
+
+def plot_greedy_gleinig_comparison():
+    methods_all = ["greedy_linear", "gleinig"]
+    densities_all = [lambda n: n, lambda n: n ** 2]#, lambda n: 2 ** (n - 1)]
+    figure_id = 0
+
+    for method_ind, method in enumerate(methods_all):
+        for density_ind, density in enumerate(densities_all):
+            if method == "greedy_linear" and density_ind == 2:
+                num_qubits = np.array(range(5, 10))
+            else:
+                num_qubits = np.array(range(5, 12))
+            num_amplitudes = [densities_all[density_ind](n) for n in num_qubits]
+            plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, density_ind, method_ind, "_nolabel_", figure_id)
+
+    circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=5, label="Greedy")
+    star_marker = Line2D([0], [0], linestyle="", color="k", marker="*", markersize=8, label="Gleinig")
+    blue_line = Line2D([0], [0], color="b", label=r"$m = n$")
+    red_line = Line2D([0], [0], color="r", label=r"$m = n^2$")
+    green_line = Line2D([0], [0], color="g", label=r"$m = 2^{n-1}$")
+    plt.legend(handles=[circle_marker, star_marker, blue_line, red_line, green_line])
+    save_figure()
+
 
 if __name__ == "__main__":
     # plot_control_reduction_effect()
     # plot_walk_order_comparison()
-    plot_gleinig_comparison()
+    plot_gleinigwalk_gleinig_comparison()
+    # plot_greedy_gleinig_comparison()
 
     plt.show()
