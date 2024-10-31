@@ -36,7 +36,8 @@ class PathFinder(ABC):
         """
         pass
 
-    def set_graph_attributes(self, graph: Graph, target_state: dict[str, complex]):
+    @staticmethod
+    def set_graph_attributes(graph: Graph, target_state: dict[str, complex]):
         """
         Assigns necessary attributes of the travel graph.
         :param graph: Travel graph for state preparation.
@@ -82,7 +83,8 @@ class PathFinder(ABC):
                 return state
         return None
 
-    def get_path_segments(self, graph: Graph, target_state: dict[str, complex]) -> list[PathSegment]:
+    @staticmethod
+    def get_path_segments(graph: Graph, target_state: dict[str, complex]) -> list[PathSegment]:
         """
         Returns a list of path segments describing state preparation path.
         :param graph: Travel graph.
