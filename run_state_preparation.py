@@ -10,7 +10,10 @@ from qiskit import transpile
 from qiskit.quantum_info import random_statevector, Statevector
 from tqdm import tqdm
 
-from src.quantum_walks import PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom, PathFinderGrayCode
+from src.permutation_circuit_generator import PermutationCircuitGeneratorQiskit
+from src.permutation_generator import PermutationGeneratorDense
+from src.quantum_walks import PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom, PathFinderGrayCode
+from src.utilities import make_dict
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 from src.state_preparation import CircuitGenerator, CircuitGeneratorPath, CircuitGeneratorQiskitDefault, CircuitGeneratorQiskitDense
 
@@ -18,7 +21,7 @@ from src.state_preparation import CircuitGenerator, CircuitGeneratorPath, Circui
 def prepare_state(target_state: dict[str, complex], circuit_generator: CircuitGenerator, basis_gates: list[str], optimization_level: int, check_fidelity: bool,
                   fidelity_tol: float = 1e-8) -> int:
     circuit = circuit_generator.generate_circuit(target_state)
-    circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
+    circuit_transpiled = transpile(circuit, **make_dict(basis_gates, optimization_level))
     cx_count = circuit_transpiled.count_ops().get("cx", 0)
 
     if check_fidelity:
@@ -74,7 +77,7 @@ def run_prepare_state():
 
     # circuit_generator = CircuitGeneratorQiskitDefault()
     # circuit_generator = CircuitGeneratorPath(path_finder=path_finder, reduce_controls=True, remove_leading_cx=True, add_barriers=False)
-    circuit_generator = CircuitGeneratorQiskitDense()
+    circuit_generator = CircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(), permutation_circuit_generator=PermutationCircuitGeneratorQiskit())
 
     num_qubits_all = np.array(list(range(5, 12)))
     num_amplitudes_all = num_qubits_all
@@ -83,7 +86,7 @@ def run_prepare_state():
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
-    process_func = partial(prepare_state, circuit_generator=circuit_generator, basis_gates=basis_gates, optimization_level=optimization_level, check_fidelity=check_fidelity)
+    process_func = partial(prepare_state, **make_dict(circuit_generator, basis_gates, optimization_level, check_fidelity))
 
     for num_qubits, num_amplitudes in zip(num_qubits_all, num_amplitudes_all):
         print(f"Num qubits: {num_qubits}; num amplitudes: {num_amplitudes}")

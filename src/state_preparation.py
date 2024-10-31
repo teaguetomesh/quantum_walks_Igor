@@ -6,12 +6,12 @@ from dataclasses import dataclass
 import numpy as np
 from numpy import ndindex
 from pysat.examples.hitman import Hitman
-
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
 from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.quantum_info import Operator
 
+from src.permutation_circuit_generator import PermutationCircuitGenerator
+from src.permutation_generator import PermutationGenerator
 from src.quantum_walks import PathSegment, PathFinder
 from src.validation import get_state_vector
 
@@ -175,57 +175,42 @@ class CircuitGeneratorPath(CircuitGenerator):
         return circuit
 
 
-class CircuitGeneratorPermutation(CircuitGenerator, ABC):
-    """ Permutes target states to fill a dense subspace and uses a dense state preparation method. """
+@dataclass(kw_only=True)
+class CircuitGeneratorQiskitDense(CircuitGenerator):
+    """ Uses qiskit's built-in state preparation on dense state.
+    dense_permutation_generator has to generate a permutation into the smallest number of qubits able to fit the target state. """
+    dense_permutation_generator: PermutationGenerator
+    permutation_circuit_generator: PermutationCircuitGenerator
 
     @staticmethod
-    def get_dense_mapping(target_state: dict[str, complex]) -> list[str]:
-        """ Returns list of target bases in the order they should be mapped into a list of sequentially increasing bases.
-        This implementation maps the target bases in the key iteration order. """
-        return [basis for basis in target_state]
+    def map_to_dense_state(state: dict[str, complex], dense_permutation: dict[str, str]) -> list[complex]:
+        """ Permutes state according to given dense permutation and returns contiguous list of amplitudes where i-th element corresponds to basis i. """
+        num_qubits_dense = int(np.ceil(np.log2(len(state))))
+        dense_state = [0] * 2 ** num_qubits_dense
+        for i, (basis, amplitude) in enumerate(state.items()):
+            ind = int(dense_permutation[basis], 2)
+            dense_state[ind] = amplitude
+        return dense_state
 
     @staticmethod
-    def get_permutation_circuit(state_mapping: list[str]) -> QuantumCircuit:
-        """ Generates permutation circuit that permutes the states according to given state_mapping.
-        This implementation appends a single n-qubit permutation unitary and lets qiskit decompose it later. """
-        num_qubits = len(next(iter(state_mapping)))
-        unitary = np.eye(2 ** num_qubits)
-        for i, basis in enumerate(state_mapping):
-            basis_int = int(basis, 2)
-            unitary[:, [i, basis_int]] = unitary[:, [basis_int, i]]
-
+    def get_state_preparation_circuit(dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
+        """ Returns a quantum circuit that prepares a dense state via qiskit's prepare_state method. """
         qc = QuantumCircuit(num_qubits)
-        qc.append(Operator(unitary), range(num_qubits))
+        num_qubits_dense = int(np.ceil(np.log2(len(dense_state))))
+        qc.prepare_state(dense_state, range(num_qubits_dense))
         return qc
 
-    @abstractmethod
-    def get_state_preparation_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
-        """ Generates the circuit that prepares dense_state. """
-        pass
-
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
-        state_mapping = self.get_dense_mapping(target_state)
-        mapped_state = [target_state[key] for key in state_mapping]
+        dense_permutation = self.dense_permutation_generator.get_permutation(target_state)
+        dense_state = self.map_to_dense_state(target_state, dense_permutation)
         num_qubits = len(next(iter(target_state)))
-        state_preparation_qc = self.get_state_preparation_circuit(mapped_state, num_qubits)
-        permutation_qc = self.get_permutation_circuit(state_mapping)
+        state_preparation_qc = self.get_state_preparation_circuit(dense_state, num_qubits)
+        permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(dense_permutation)
         overall_qc = state_preparation_qc.compose(permutation_qc)
         return overall_qc
 
 
-class CircuitGeneratorQiskitDense(CircuitGeneratorPermutation):
-    """ Uses qiskit's built-in state preparation on dense state. """
-
-    def get_state_preparation_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
-        """ Returns a quantum circuit that prepares a dense state via qiskit's prepare_state method. """
-        num_qubits_dense = int(np.ceil(np.log2(len(dense_state))))
-        dense_state_extended = dense_state + [0] * (2 ** num_qubits_dense - len(dense_state))
-        qc = QuantumCircuit(num_qubits)
-        qc.prepare_state(dense_state_extended, range(num_qubits_dense))
-        return qc
-
-
-class CircuitGeneratorMultiEdge(CircuitGeneratorPermutation):
+class CircuitGeneratorMultiEdge:
     """ Uses multi-edge walk to generate a circuit for a dense state. """
 
     def get_state_preparation_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
