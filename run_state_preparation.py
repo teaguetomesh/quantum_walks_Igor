@@ -10,7 +10,7 @@ from qiskit import transpile
 from qiskit.quantum_info import random_statevector, Statevector
 from tqdm import tqdm
 
-from src.permutation_circuit_generator import PermutationCircuitGeneratorQiskit
+from src.permutation_circuit_generator import PermutationCircuitGeneratorQiskit, PermutationCircuitGeneratorSparse
 from src.permutation_generator import PermutationGeneratorDense
 from src.quantum_walks import PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom, PathFinderGrayCode
 from src.utilities import make_dict
@@ -77,7 +77,7 @@ def run_prepare_state():
 
     # circuit_generator = CircuitGeneratorQiskitDefault()
     # circuit_generator = CircuitGeneratorPath(path_finder=path_finder, reduce_controls=True, remove_leading_cx=True, add_barriers=False)
-    circuit_generator = CircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(), permutation_circuit_generator=PermutationCircuitGeneratorQiskit())
+    circuit_generator = CircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
     num_qubits_all = np.array(list(range(5, 12)))
     num_amplitudes_all = num_qubits_all

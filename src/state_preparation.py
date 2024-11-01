@@ -205,7 +205,8 @@ class CircuitGeneratorQiskitDense(CircuitGenerator):
         dense_state = self.map_to_dense_state(target_state, dense_permutation)
         num_qubits = len(next(iter(target_state)))
         state_preparation_qc = self.get_state_preparation_circuit(dense_state, num_qubits)
-        permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(dense_permutation)
+        inverse_permutation = {val: key for key, val in dense_permutation.items()}
+        permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(inverse_permutation)
         overall_qc = state_preparation_qc.compose(permutation_qc)
         return overall_qc
 
