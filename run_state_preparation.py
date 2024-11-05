@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from src.permutation_circuit_generator import PermutationCircuitGeneratorQiskit, PermutationCircuitGeneratorSparse
 from src.permutation_generator import PermutationGeneratorDense
+from src.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom, PathFinderGrayCode
 from src.utilities import make_dict
 from src.validation import execute_circuit, get_state_vector, get_fidelity
@@ -22,6 +23,7 @@ def prepare_state(target_state: dict[str, complex], circuit_generator: CircuitGe
                   fidelity_tol: float = 1e-8) -> int:
     circuit = circuit_generator.generate_circuit(target_state)
     circuit_transpiled = transpile(circuit, **make_dict(basis_gates, optimization_level))
+    circuit_transpiled = remove_leading_cx_gates(circuit_transpiled)
     cx_count = circuit_transpiled.count_ops().get("cx", 0)
 
     if check_fidelity:
@@ -79,10 +81,10 @@ def run_prepare_state():
     # circuit_generator = CircuitGeneratorPath(path_finder=path_finder, reduce_controls=True, remove_leading_cx=True, add_barriers=False)
     circuit_generator = CircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits_all = np.array(list(range(5, 12)))
+    num_qubits_all = np.array(list(range(6, 12)))
     num_amplitudes_all = num_qubits_all
     out_col_name = "qiskit_dense"
-    num_workers = 1
+    num_workers = 10
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
