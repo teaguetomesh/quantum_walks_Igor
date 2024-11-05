@@ -6,6 +6,8 @@ from typing import Sequence
 import distinctipy
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse
 from matplotlib.ticker import MultipleLocator
 from numpy import ndarray
 
@@ -21,6 +23,7 @@ class Line:
     """ Class that represents a line in a 2D plot. """
     xs: Sequence
     ys: Sequence
+    error_margins: Sequence = None
     color: tuple | int = colors[0]
     marker: str | int = 'o'
     style: str | int = '-'
@@ -71,12 +74,24 @@ def assign_distinct_colors(lines: list[Line]):
         lines[i].color = colors[i]
 
 
-def plot_general(lines: list[Line], all_std_devs: list[np.array], axis_labels: tuple[str | None, str | None] = None, tick_multiples: tuple[float | None, float | None] = None,
+def pick_event_handler(event):
+    if isinstance(event.artist, Line2D):
+        x = event.artist.get_xdata()[event.ind][0]
+        y = event.artist.get_ydata()[event.ind][0]
+        bbox_settings = dict(boxstyle='round', fc=(1.0, 0.7, 0.7), ec='none')
+        arrow_settings = dict(arrowstyle='wedge, tail_width=1', fc=(1.0, 0.7, 0.7), ec='none', patchA=None, patchB=Ellipse((2, -1), 0.5, 0.5), relpos=(0.2, 0.5))
+        annotation = event.artist.axes.annotate(f'({x:.3g}, {y:.3g})', xy=(x, y), xytext=(20, 20), textcoords='offset points', size=10, bbox=bbox_settings,
+                                                arrowprops=arrow_settings)
+        annotation.draggable()
+        event.canvas.draw()
+        print(x, y)
+
+
+def plot_general(lines: list[Line], axis_labels: tuple[str | None, str | None] = None, tick_multiples: tuple[float | None, float | None] = None,
                  boundaries: tuple[float | None, float | None, float | None, float | None] = None, font_size: int = 20, legend_loc: str = 'best', figure_id: int = None, **kwargs):
     """
     Plots specified list of lines.
     :param lines: List of lines.
-    :param all_std_devs: List of std. dev.
     :param axis_labels: Labels for x and y axes.
     :param tick_multiples: Base multiples for ticks along x and y axes.
     :param boundaries: x min, x max, y min, y max floats defining plot boundaries.
@@ -87,19 +102,19 @@ def plot_general(lines: list[Line], all_std_devs: list[np.array], axis_labels: t
     """
     if figure_id is None:
         new_figure = True
-        plt.figure()
+        fig = plt.figure()
     else:
         new_figure = plt.fignum_exists(figure_id)
-        plt.figure(figure_id)
-
+        fig = plt.figure(figure_id)
+    fig.canvas.mpl_connect('pick_event', pick_event_handler)
     plt.rcParams.update({'font.size': font_size})
 
-    for line, std_dev in zip(lines, all_std_devs):
-        plt.errorbar(line.xs, line.ys, yerr=std_dev, color=line.color, marker=line.marker, linestyle=line.style, 
-                     markersize=marker_sizes[line.marker], label=line.label, capsize=7.0) #capsize is the size of error bar caps
-        handles, labels=plt.gca().get_legend_handles_labels()
-        handles=[h[0] for h in handles] #strips the error bars from the legend.
+    for line in lines:
+        plt.errorbar(line.xs, line.ys, yerr=line.error_margins, color=line.color, marker=line.marker, linestyle=line.style, markersize=marker_sizes[line.marker], label=line.label,
+                     capsize=5, picker=5)
         if line.label != '_nolabel_':
+            handles, labels = plt.gca().get_legend_handles_labels()
+            handles = [h[0] for h in handles]  # strips the error bars from the legend.
             plt.legend(handles, labels, loc=legend_loc, draggable=True)
 
     if axis_labels is not None:
