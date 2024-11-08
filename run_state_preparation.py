@@ -14,12 +14,12 @@ from src.permutation_circuit_generator import PermutationCircuitGeneratorQiskit,
 from src.permutation_generator import PermutationGeneratorDense
 from src.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom, PathFinderGrayCode
+from src.state_circuit_generator import StateCircuitGenerator, StateCircuitGeneratorMultiEdgeDense, StateCircuitGeneratorQiskitDense
 from src.utilities import make_dict
 from src.validation import execute_circuit, get_state_vector, get_fidelity
-from src.state_preparation import CircuitGenerator, CircuitGeneratorPath, CircuitGeneratorQiskitDefault, CircuitGeneratorQiskitDense
 
 
-def prepare_state(target_state: dict[str, complex], circuit_generator: CircuitGenerator, basis_gates: list[str], optimization_level: int, check_fidelity: bool,
+def prepare_state(target_state: dict[str, complex], circuit_generator: StateCircuitGenerator, basis_gates: list[str], optimization_level: int, check_fidelity: bool,
                   fidelity_tol: float = 1e-8) -> int:
     circuit = circuit_generator.generate_circuit(target_state)
     circuit_transpiled = transpile(circuit, **make_dict(basis_gates, optimization_level))
@@ -79,11 +79,14 @@ def run_prepare_state():
 
     # circuit_generator = CircuitGeneratorQiskitDefault()
     # circuit_generator = CircuitGeneratorPath(path_finder=path_finder, reduce_controls=True, remove_leading_cx=True, add_barriers=False)
-    circuit_generator = CircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    # circuit_generator = StateCircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(),
+    #                                                      permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    circuit_generator = StateCircuitGeneratorMultiEdgeDense(dense_permutation_generator=PermutationGeneratorDense(),
+                                                            permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits_all = np.array(list(range(6, 12)))
+    num_qubits_all = np.array(list(range(10, 12)))
     num_amplitudes_all = num_qubits_all
-    out_col_name = "qiskit_dense"
+    out_col_name = "multiedge_dense"
     num_workers = 10
     check_fidelity = True
     optimization_level = 3

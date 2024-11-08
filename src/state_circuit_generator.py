@@ -4,11 +4,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import numpy as np
-from numpy import ndindex
+from numpy import ndindex, ndarray
+from numpy.random.mtrand import Sequence
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
-from qiskit.converters import circuit_to_dag, dag_to_circuit
+from qiskit.pulse import num_qubits
+from qiskit.quantum_info import Statevector
 
 from src.permutation_circuit_generator import PermutationCircuitGenerator
 from src.permutation_generator import PermutationGenerator
@@ -16,7 +18,7 @@ from src.quantum_walks import PathSegment, PathFinder
 from src.validation import get_state_vector
 
 
-class CircuitGenerator(ABC):
+class StateCircuitGenerator(ABC):
     """ Base class for generating circuits that prepare a given state. """
 
     @abstractmethod
@@ -25,7 +27,7 @@ class CircuitGenerator(ABC):
         pass
 
 
-class CircuitGeneratorQiskitDefault(CircuitGenerator):
+class StateCircuitGeneratorQiskitDefault(StateCircuitGenerator):
     """ Generates state preparation circuit via qiskit's default built-in method. """
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
@@ -37,7 +39,7 @@ class CircuitGeneratorQiskitDefault(CircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class CircuitGeneratorPath(CircuitGenerator):
+class StateCircuitGeneratorSingleEdge(StateCircuitGenerator):
     """
     Finds a particular path through the target basis states and generates the circuit based on single-edge segments of that path.
     :var path_finder: PathFinder class implementing a particular heuristic for finding path through the basis states.
@@ -102,11 +104,11 @@ class CircuitGeneratorPath(CircuitGenerator):
             visited_transformed = copy.deepcopy(visited)
             for ind in diff_inds[1:]:
                 qc.cx(interaction_ind, ind)
-                CircuitGeneratorPath.update_visited(visited_transformed, interaction_ind, ind)
+                StateCircuitGeneratorSingleEdge.update_visited(visited_transformed, interaction_ind, ind)
 
             origin_ind = visited.index(origin)
             if self.reduce_controls:
-                control_indices = CircuitGeneratorPath.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+                control_indices = StateCircuitGeneratorSingleEdge.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
             else:
                 control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
 
@@ -141,7 +143,7 @@ class CircuitGeneratorPath(CircuitGenerator):
                 qc.barrier()
 
         if self.remove_leading_cx:
-            qc = CircuitGeneratorPath.remove_leading_cx_gates(qc)
+            qc = StateCircuitGeneratorSingleEdge.remove_leading_cx_gates(qc)
 
         return qc.reverse_bits()
 
@@ -152,8 +154,8 @@ class CircuitGeneratorPath(CircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class CircuitGeneratorQiskitDense(CircuitGenerator):
-    """ Uses qiskit's built-in state preparation on dense state.
+class StateCircuitGeneratorDensePermute(StateCircuitGenerator):
+    """ Generates a circuit for a dense state, then permutes it to the target state.
     dense_permutation_generator has to generate a permutation into the smallest number of qubits able to fit the target state. """
     dense_permutation_generator: PermutationGenerator
     permutation_circuit_generator: PermutationCircuitGenerator
@@ -168,42 +170,91 @@ class CircuitGeneratorQiskitDense(CircuitGenerator):
             dense_state[ind] = amplitude
         return dense_state
 
-    @staticmethod
-    def get_state_preparation_circuit(dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
+    @abstractmethod
+    def get_dense_state_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
+        pass
+
+    def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
+        dense_permutation = self.dense_permutation_generator.get_permutation(target_state)
+        dense_state = self.map_to_dense_state(target_state, dense_permutation)
+        num_qubits = len(next(iter(target_state)))
+        dense_state_qc = self.get_dense_state_circuit(dense_state, num_qubits)
+        inverse_permutation = {val: key for key, val in dense_permutation.items()}
+        permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(inverse_permutation)
+        overall_qc = dense_state_qc.compose(permutation_qc)
+        return overall_qc
+
+
+@dataclass(kw_only=True)
+class StateCircuitGeneratorQiskitDense(StateCircuitGeneratorDensePermute):
+    """ Uses qiskit's built-in state preparation on dense state. """
+
+    def get_dense_state_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
         """ Returns a quantum circuit that prepares a dense state via qiskit's prepare_state method. """
         qc = QuantumCircuit(num_qubits)
         num_qubits_dense = int(np.ceil(np.log2(len(dense_state))))
         qc.prepare_state(dense_state, range(num_qubits_dense))
         return qc
 
-    def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
-        dense_permutation = self.dense_permutation_generator.get_permutation(target_state)
-        dense_state = self.map_to_dense_state(target_state, dense_permutation)
-        num_qubits = len(next(iter(target_state)))
-        state_preparation_qc = self.get_state_preparation_circuit(dense_state, num_qubits)
-        inverse_permutation = {val: key for key, val in dense_permutation.items()}
-        permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(inverse_permutation)
-        overall_qc = state_preparation_qc.compose(permutation_qc)
-        return overall_qc
 
+@dataclass(kw_only=True)
+class StateCircuitGeneratorMultiEdgeDense(StateCircuitGeneratorDensePermute):
+    """ Uses multi-edge walk to prepare a dense state. """
 
-class CircuitGeneratorMultiEdge:
-    """ Uses multi-edge walk to generate a circuit for a dense state. """
+    def apply_mcrx(self, time: float, target_ind: int, control_inds: ndarray, qc: QuantumCircuit, current_state: Statevector):
+        """ Applies multi-controlled Rx gate with the given parameters to the given quantum circuit and updates current state vector. """
+        if not np.isclose(time, 0):
+            rx_gate = RXGate(2 * time)
+            if len(control_inds) > 0:
+                rx_gate = rx_gate.control(len(control_inds))
+            target_ind = current_state.num_qubits - 2 - target_ind
+            control_inds = current_state.num_qubits - 2 - control_inds
+            gate_circuit = QuantumCircuit(current_state.num_qubits)
+            gate_circuit.append(rx_gate, control_inds.tolist() + [target_ind])
+            qc.compose(gate_circuit, range(current_state.num_qubits), inplace=True)
+            return current_state.evolve(gate_circuit)
+        return current_state
 
-    def get_state_preparation_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
-        num_qubits_dense = int(np.ceil(np.log2(len(dense_state))))
-        assert num_qubits_dense < num_qubits, 'State is too dense, need at least 1 free qubit for phase shift to work'
-        dense_state_extended = dense_state + [0] * (2 ** num_qubits_dense - len(dense_state))
-        target_cube = np.array(dense_state_extended).reshape([2] * num_qubits_dense)
-        target_cube_prob = abs(target_cube) ** 2
-        current_cube = np.zeros_like(target_cube_prob)
-        current_cube[*[0] * num_qubits_dense] = 1
+    def apply_mcrz(self, time: float, control_inds: ndarray, qc: QuantumCircuit, current_state: Statevector):
+        """ Applies multi-controlled Rz gate with the given parameters to the given quantum circuit and updates current state vector. """
+        if not np.isclose(time, 0):
+            rz_gate = RZGate(2 * time)
+            if len(control_inds) > 0:
+                rz_gate = rz_gate.control(len(control_inds))
+            control_inds = current_state.num_qubits - 2 - control_inds
+            gate_circuit = QuantumCircuit(current_state.num_qubits)
+            gate_circuit.append(rz_gate, control_inds.tolist() + [current_state.num_qubits - 1])
+            qc.compose(gate_circuit, range(gate_circuit.num_qubits), inplace=True)
+            return current_state.evolve(gate_circuit)
+        return current_state
+
+    def get_dense_state_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
+        num_qubits_dense = int(np.log2(len(dense_state)))
+        assert num_qubits_dense < num_qubits, 'State is too dense, need at least 1 free qubit for multi-edge phase shift to work'
+        dense_state = np.array(dense_state)
         qc = QuantumCircuit(num_qubits)
+        current_state = Statevector.from_int(0, 2 ** (num_qubits_dense + 1))
         for dim in range(num_qubits_dense):
-            slice_indices = ndindex(*[2] * (dim + 1))
-            target_slice_probs = np.array([np.sum(target_cube_prob[..., *index]) for index in slice_indices]).reshape(*[2] * (dim + 1))
-            for index in slice_indices[:len(slice_indices) // 2]:
-                target_prob = target_slice_probs[index]
-                current_amplitude_1 = current_cube[*[0] * (num_qubits_dense - dim) + index]
+            target_ind = num_qubits_dense - dim - 1
+            for basis_ind in range(2 ** dim):
+                amplitude_1 = current_state[basis_ind]
+                amplitude_2 = current_state[basis_ind ^ 1 << dim]
+                x = abs(amplitude_1)
+                y = abs(amplitude_2)
+                a = np.angle(amplitude_1) - np.angle(amplitude_2)
+                p = np.sum(abs(dense_state[basis_ind :: 2 ** (dim + 1)]) ** 2)
+                time_num = (x ** 2 * y ** 2 * (1 + np.exp(2j * a)) ** 2 - 4 * p * np.exp(2j * a) * (x ** 2 + y ** 2 - p)) ** 0.5 + np.exp(1j * a) * (x ** 2 + y ** 2 - 2 * p)
+                time_denom = np.exp(1j * a) * (y ** 2 - x ** 2) + x * y * (1 - np.exp(2j * a))
+                time = -0.5j * np.log(time_num / time_denom)
+                assert time.imag < 1e-5, f'Failed to solve for time. Time: {time}'
+                time = time.real
+                basis_ind_bin = format(basis_ind, f'0{num_qubits_dense}b')
+                controls = np.where(np.array(list(basis_ind_bin)) == '1')[0]
+                current_state = self.apply_mcrx(time, target_ind, controls, qc, current_state)
 
-        return qc.reverse_bits()
+        for basis_ind in range(len(current_state) // 2):
+            time = np.angle(current_state[basis_ind]) - np.angle(dense_state[basis_ind])
+            basis_ind_bin = format(basis_ind, f'0{num_qubits_dense}b')
+            controls = np.where(np.array(list(basis_ind_bin)) == '1')[0]
+            current_state = self.apply_mcrz(time, controls, qc, current_state)
+        return qc

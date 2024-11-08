@@ -51,12 +51,12 @@ def plot_walk_order_comparison():
 
 
 def plot_qiskit_comparison():
-    methods_all = ["shp_reduced", "qiskit", "qiskit_dense"]
+    methods_all = ["shp_reduced", "qiskit", "qiskit_dense", "multiedge_dense"]
     densities_all = [lambda n: n, lambda n: n ** 2, lambda n: 2 ** (n - 1)]
     figure_id = 0
 
     for method_ind, method in enumerate(methods_all):
-        densities = densities_all[0:1] if method == "qiskit_dense" else densities_all
+        densities = densities_all[0:1] if method_ind > 1 else densities_all
         for density_ind, density in enumerate(densities):
             if method == "shp_reduced" and density_ind == 2:
                 num_qubits = np.array(range(5, 10))
@@ -76,8 +76,8 @@ def plot_qiskit_comparison():
 
 
 if __name__ == "__main__":
-    plot_control_reduction_effect()
+    # plot_control_reduction_effect()
     # plot_walk_order_comparison()
-    # plot_qiskit_comparison()
+    plot_qiskit_comparison()
 
     plt.show()
