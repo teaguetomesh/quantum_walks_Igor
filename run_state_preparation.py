@@ -11,6 +11,8 @@ from qiskit import transpile, QuantumCircuit
 import qiskit.qasm3
 from qiskit.quantum_info import random_statevector, Statevector
 from tqdm import tqdm
+import networkx as nx
+import matplotlib as plt
 
 from src.quantum_walks import (PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST, 
     PathFinderRandom, PathFinderGrayCode, GleinigPathFinder, BinaryTreePathFinder, GleinigWalk,
@@ -115,9 +117,9 @@ def merge_state_files():
         pickle.dump(merged, f)
 
 
-def run_prepare_state(init_state):
+def run_prepare_state(init_state, num_qubits_all, file_idxs):
     # method = "qiskit"
-    method = "gleinig_qwalk"
+    # method = "gleinig_qwalk"
     # method = "walks"
     method="gleinig"
     # path_finder = PathFinderRandom()
@@ -125,14 +127,14 @@ def run_prepare_state(init_state):
     # path_finder = PathFinderGrayCode()
     # path_finder = PathFinderSHP()
     # path_finder = GleinigPathFinderPframes()
-    # path_finder=PathFinderMHSLinear()
+    path_finder=PathFinderMHSLinear()
 
-    path_finder = GleinigPathFinder()
+    # path_finder = GleinigPathFinder()
     # path_finder = BinaryTreePathFinder()
     # path_finder=PathFinderHammingWeight()
     # path_finder = PathFinderMST()
     # num_qubits_all = np.array([5])
-    num_qubits_all = np.array(list(range(6, 7)))
+    # num_qubits_all = np.array(list(range(5, 6)))
     num_amplitudes_all = num_qubits_all # possible values are [num_qubits_all, num_qubits_all**2, 2**(num_qubits_all-1)]
     # out_col_name = "qiskit"
     # out_col_name = "gleinig_qwalk"
@@ -156,7 +158,7 @@ def run_prepare_state(init_state):
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
-        state_list=state_list[0:1:]
+        state_list=state_list[file_idxs[0]:file_idxs[1]:]
         results = []
         # state_list=[init_state]
         if num_workers == 1:
@@ -201,24 +203,30 @@ def run_prepare_state(init_state):
 #     print(f"Min CX: {np.min(results)}\n")
 
 
-def run_bruteforce_order_state(num_workers=1):
+def run_bruteforce_order_state(num_workers, algo_type, num_qubits_all, file_idxs):
     '''Brute force search.'''
     out_col_name = "brute_force_linear"
-    num_qubits_all = np.array(list(range(6, 7)))
+    # num_qubits_all = np.array(list(range(5, 6)))
     # num_workers = 1
     num_amplitudes_all = num_qubits_all
 
 
     results = []
     for num_qubits, num_amplitudes in zip(num_qubits_all, num_amplitudes_all):
-        process_func = partial(prepare_state_brute_star, num_amplitudes=num_amplitudes)
+        if algo_type=="linear":
+            process_func = partial(prepare_state_brute, num_amplitudes=num_amplitudes)
+        elif algo_type=="star":
+            process_func = partial(prepare_state_brute_star, num_amplitudes=num_amplitudes)
+        else:
+            assert False, "unkown exhaustive"
         print(f"Num qubits: {num_qubits}; num amplitudes: {num_amplitudes}")
         data_folder = f"data/qubits_{num_qubits}/m_{num_amplitudes}"
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
         results = []
-        state_list=state_list[0:1:]
+        # state_list=state_list[0:1:]
+        state_list=state_list[file_idxs[0]:file_idxs[1]:]
         if num_workers == 1:
             for result in tqdm(map(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
                 results.append(result)
@@ -278,40 +286,52 @@ def prepare_state_brute_star(target_state: dict[str, complex], num_amplitudes: i
     best_cx=None
     best_path=None
     best_circ_transpiled=None
-    gleinig_merger = MergeInitialize(target_state)
-    root, _, _, _=gleinig_merger._select_strings(target_state)
-    all_permutations = list(permutations(range(num_amplitudes-1)))
-    remaining_basis=list(target_state.keys())
-    remaining_basis.remove(root)
-    all_pairs=[[root, z2] for z2 in remaining_basis]
-    print("all pairs ", all_pairs)
+    all_basis_states=list(target_state.keys())
+    best_graph=None
+    for root in all_basis_states:
+        # gleinig_merger = MergeInitialize(target_state)
+        # root, _, _, _=gleinig_merger._select_strings(target_state)
+        all_permutations = list(permutations(range(num_amplitudes-1)))
+        remaining_basis=list(target_state.keys())
+        remaining_basis.remove(root)
+        all_pairs=[[root, z2] for z2 in remaining_basis]
+        # print("all pairs ", all_pairs)
 
-    for perm in all_permutations:
-        graph = Graph()
-        temp_pairs=[all_pairs[idx] for idx in perm]
-        for pair in temp_pairs:
-            graph.add_edge(pair[0], pair[1])
-        graph.graph["start"] = root
-        path_finder=PathFinderLinear()
-        path_finder.set_graph_attributes_from_pairs(graph, temp_pairs, target_state)
-        segments=path_finder.get_path_segments_from_pairs_leafsm(graph, temp_pairs, target_state)
-        print(segments)
-        circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(segments, reduce_controls, remove_leading_cx, add_barriers)
-        circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
-        cx_count = circuit_transpiled.count_ops().get("cx", 0)
-        print("cx count ", cx_count)
-        
-        # cx_count = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
-        #                          reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
-        #                          add_barriers=add_barriers)
-        results.append(cx_count)
-        if not best_cx or best_cx>cx_count:
-            best_cx=cx_count
-            best_path=temp_pairs
-            best_circ=circuit
-            best_circ_transpiled=circuit_transpiled
-        # print(circuit)
-    
+        for perm in all_permutations:
+            graph = Graph()
+            temp_pairs=[all_pairs[idx] for idx in perm]
+            for pair in temp_pairs:
+                val=sum([b1 != b2 for b1, b2 in zip(pair[0],pair[1])])
+                graph.add_edge(pair[0], pair[1], weight=val)
+            graph.graph["start"] = root
+            path_finder=PathFinderLinear()
+            path_finder.set_graph_attributes_from_pairs(graph, temp_pairs, target_state)
+            segments=path_finder.get_path_segments_from_pairs_leafsm(graph, temp_pairs, target_state)
+            print(segments)
+            circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(segments, reduce_controls, remove_leading_cx, add_barriers)
+            circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
+            cx_count = circuit_transpiled.count_ops().get("cx", 0)
+            print("cx count ", cx_count)
+            
+            # cx_count = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
+            #                          reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
+            #                          add_barriers=add_barriers)
+            results.append(cx_count)
+            if not best_cx or best_cx>cx_count:
+                best_cx=cx_count
+                best_path=temp_pairs
+                best_circ=circuit
+                best_circ_transpiled=circuit_transpiled
+                best_graph=graph
+            # print(circuit)
+    labels = nx.get_edge_attributes(graph,'weight')
+    pos = nx.spring_layout(graph)
+    nx.draw(graph, pos, with_labels=True, node_color="lightblue")
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
+
+    # Save the figure to a file
+    plt.pyplot.savefig(f"graph_star_{best_path[0]}.png")
+    plt.pyplot.clf()
     # print(f"Min CX: {np.min(results)}\n")
     # best_path_basis=[list(target_state.keys())[b] for b in best_path]
     print(f"best linear path: ", best_path)
@@ -736,7 +756,10 @@ if __name__ == "__main__":
     init_state={"010101": amp, "010110": amp, "101000": amp, "100011": amp, "101001": amp, "011110": amp}
 
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
-    # run_bruteforce_order_state()
-    run_prepare_state(init_state)
+    qubits=np.array(list(range(6,7)))
+    file_indices=[0,1]
+    # run_bruteforce_order_state(1, "linear", qubits, file_indices)
+    run_bruteforce_order_state(1, "star", qubits, file_indices)
+    # run_prepare_state(init_state, qubits, file_indices)
     # run_greedy_order_state(num_workers=1)
     # run_bruteforce_order_state(num_workers=6)

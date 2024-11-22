@@ -420,30 +420,90 @@ class PathFinderMST(PathFinder):
 
 
 class PathFinderMHSLinear(PathFinder):
-    """Returns the Minimum Spanning Tree on the basis states. """
+    """The Minimum Hitting Set method on the basis states. """
     def build_travel_graph(self, states: list[str]) -> Graph:
-        mhs_scores=self.get_all_mhs_scores(states)
-        ordered_states=self.order_basis_states_mhs(states)
-        print(states)
-        print(ordered_states)
+        # mhs_scores=self.get_all_mhs_scores(states)
+        # ordered_states=self.order_basis_states_mhs(states)
+        # print(states)
+        # print(ordered_states)
         graph = Graph()
-        root=ordered_states[0]
-        ordered_states.remove(root)
+        # root=ordered_states[0]
+        # ordered_states.remove(root)
         # ordered_states=self.order_by_hamming_dist(root, ordered_states)
         path=[]
+        basis_original=deepcopy(states)
+        basis_mutable=deepcopy(states)
+        for _ in range(len(states)-1):
+            # print("ordered states easiest firs ", self.order_basis_states_mhs(basis_mutable))
+            easy_node=self.order_basis_states_mhs(basis_mutable)[0]
+            easy_idx=basis_mutable.index(easy_node)
+            easy_z1=basis_original[easy_idx]
+            temp_basis_search_hard=deepcopy(basis_mutable)
+            temp_basis_search_hard.remove(easy_node) #remove easy node to search for hardest node.
+            hard_node=self.order_basis_states_mhs(temp_basis_search_hard)[-1]
+            hard_idx=basis_mutable.index(hard_node)
+            hard_z2=basis_original[hard_idx]
+            path.append([easy_z1, hard_z2])
+            basis_mutable.pop(hard_idx)
+            basis_original.pop(hard_idx)
+            basis_mutable=self.update_nodes(easy_z1, hard_z2, basis_mutable)
+            print("basis mutable ", basis_mutable)
         # for i in range(len(ordered_states) - 1):
         #     graph.add_edge(ordered_states[i], ordered_states[i + 1])
         # graph.graph["start"] = ordered_states[0]
-        for elem in ordered_states[::-1]:
-            graph.add_edge(root, elem)
-            path.append([root, elem])
-        graph.graph["start"] = root
+        # for elem in ordered_states[::-1]:
+        #     graph.add_edge(root, elem)
+        #     path.append([root, elem])
+        # graph.graph["start"] = root
         # bases=[list(reversed(pair)) for pair in bases]
-        # for pair in bases:
-        #     graph.add_edge(pair[0], pair[1])
-        # graph.graph["start"] = bases[0][0]
+        path=path[::-1] #we worked backwards.
+        for pair in path:
+            graph.add_edge(pair[0], pair[1])
+        graph.graph["start"] = path[0][0]
         return graph, path
-    
+
+    def update_nodes(self, z1, z2, visited):
+        def _get_good_interaction_idx(diffs, visited_transformed, origin_ind, interaction_ind):
+            visited_transformed=deepcopy(visited_transformed)
+            diffs=deepcopy(diffs)
+            diffs.remove(interaction_ind)
+            for ind in diffs:
+                update_visited(visited_transformed, interaction_ind, ind)
+            print("visited transformed ", visited_transformed)
+            print("origin index ", origin_ind)
+            print("interaction index ", interaction_ind)
+            return len(find_min_control_set(visited_transformed, origin_ind, interaction_ind))
+
+        def get_good_interaction_idx(diffs, visited_transformed, origin_ind, destination):
+            # print("z1 idx ", origin_ind)
+            def counter_func(idx, diffs_origin_rest): 
+                # print("idx ", idx)
+                # print("diffs ", diffs_origin_rest)
+                return sum([block.count(idx) for block in diffs_origin_rest])
+            # def _create_remaining_basis(elem, basis):
+            origin_node=visited_transformed[origin_ind]
+            remaining_basis=deepcopy(visited_transformed)
+            remaining_basis.pop(origin_ind)
+            diffs_origin_rest =[[ind for ind in range(len(origin_node)) if origin_node[ind] != z1[ind]] for z1 in remaining_basis]
+            # print("diffs ", diffs)
+            # print("diffs origin rest ", diffs_origin_rest)
+            for idx in diffs:
+                print(counter_func(idx, diffs_origin_rest))
+            sorted_diffs=sorted(diffs, key=
+                                lambda temp_interaction_idx: (
+                                _get_good_interaction_idx(diffs, visited_transformed, origin_ind, temp_interaction_idx),
+                                counter_func(temp_interaction_idx, diffs_origin_rest)))
+            # print("sorted z1 z2 diffs, ", sorted_diffs)
+            return sorted_diffs[0]
+        
+        diff_inds = list(np.where(np.array(z1) != np.array(z2))[0])
+        z1_index=visited.index(z1)
+        interaction_ind=get_good_interaction_idx(diff_inds, visited, z1_index, z2)
+        diff_inds.remove(interaction_ind)
+        for target in diff_inds: #update the visited nodes
+            update_visited(visited, interaction_ind, target)
+        return visited
+
     @staticmethod
     def order_by_hamming_dist(origin, remaining_basis):
         '''Orders the remaining basis by Hamming distance from origin.'''
@@ -472,7 +532,7 @@ class PathFinderMHSLinear(PathFinder):
         indices=range(len(basis[0]))
         return sorted(basis, key=lambda elem:
                                   (PathFinderMHSLinear.get_mhs_score(elem, _create_remaining_basis(elem, orig_basis)),
-                _count_elements([[ind for ind in indices if elem[ind] != z1[ind]] for z1 in _create_remaining_basis(elem, orig_basis)])))
+                -1*_count_elements([[ind for ind in indices if elem[ind] != z1[ind]] for z1 in _create_remaining_basis(elem, orig_basis)])))
 
 
 @dataclass
@@ -1332,3 +1392,22 @@ def update_visited(visited: list[list[int]], control: int, target: int):
     for label in visited:
         if label[control] == 1:
             label[target] = 1 - label[target]
+
+def find_min_control_set(existing_states: list[list[int]], target_state_ind: int, interaction_ind: int) -> list[int]:
+        """
+        Finds minimum set of control necessary to select the target state.
+        :param existing_states: List of states with non-zero amplitudes.
+        :param target_state_ind: Index of the target state in the existing_states.
+        :param interaction_ind: Index of target qubit for the controlled operation (to exclude from consideration for the control set).
+        :return: Minimum set of control indices necessary to select the target state.
+        """
+        get_diff_inds = lambda state1, state2: [ind for ind in range(len(state1)) if ind != interaction_ind and state1[ind] != state2[ind]]
+        difference_inds = [get_diff_inds(state, existing_states[target_state_ind]) for state_ind, state in enumerate(existing_states) if state_ind != target_state_ind]
+        # print(get_diff_inds)
+        # print("interaction idx ", interaction_ind)
+        # print("difference indices", difference_inds)
+        hitman = Hitman()
+        for inds_set in difference_inds:
+            hitman.hit(inds_set)
+        # print("hitman min set ", hitman.get())
+        return hitman.get()
