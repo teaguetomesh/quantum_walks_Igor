@@ -12,6 +12,9 @@ from copy import deepcopy, copy
 # from binarytree import Node
 from itertools import permutations
 import os
+from networkx.algorithms import descendants
+from pysat.examples.hitman import Hitman
+
 # currdir=os.getcwd()
 # print(currdir)
 # os.chdir(currdir+"/src/")
@@ -29,6 +32,20 @@ class PathSegment:
     """
     labels: list[str, str]
     phase_time: float
+    amplitude_time: float
+
+@dataclass
+class LeafPathSegment:
+    """
+    Class that stores information about a particular segment in a state preparation path. Incorporates both phase and amplitude walks.
+    :var labels: Initial and final basis state labels for this segment.
+    :var phase_time1: Time of the phase walk for origin.
+    :var phase_time2: Time of the phase walk for destination.
+    :var amplitude_time: Time of the amplitude walk.
+    """
+    labels: list[str, str]
+    phase_time1: float
+    phase_time2: float
     amplitude_time: float
 
 
@@ -59,8 +76,41 @@ class PathFinder(ABC):
         nx.set_node_attributes(graph, attributes)
         graph.nodes[graph.graph["start"]]["current_prob"] = 1
         bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))[::-1]
+        # print(bfs_edges)
+
+        # for z1 in list(set([n for block in bfs_edges for n in block])):
+        #     print(f"initial target probs: {z1} ", graph.nodes[z1]["target_prob"])
+
         for edge in bfs_edges:
             graph.nodes[edge[0]]["target_prob"] += graph.nodes[edge[1]]["target_prob"]
+
+        # for z1 in list(set([n for block in bfs_edges for n in block])):
+        #     print(f"summed target probs: {z1} ", graph.nodes[z1]["target_prob"])
+
+    def set_graph_attributes_from_pairs(self, graph: Graph, all_edges, target_state: dict[str, complex]):
+        """
+        Assigns necessary attributes of the travel graph.
+        :param graph: Travel graph for state preparation.
+        :param target_state: Target state for state preparation.
+        """
+        get_attributes = lambda label: {"current_phase": 1,
+                                        "target_phase": target_state[label] / abs(target_state[label]),
+                                        "current_prob": 0,
+                                        "target_prob": abs(target_state[label]) ** 2}
+        attributes = {key: get_attributes(key) for key in target_state.keys()}
+        nx.set_node_attributes(graph, attributes)
+        graph.nodes[graph.graph["start"]]["current_prob"] = 1
+        # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))[::-1]
+        bfs_edges=all_edges[::-1] #sum from bottom up
+
+        # for z1 in list(set([n for block in bfs_edges for n in block])):
+        #     print(f"initial target probs: {z1} ", graph.nodes[z1]["target_prob"])
+
+        for edge in bfs_edges:
+            graph.nodes[edge[0]]["target_prob"] += graph.nodes[edge[1]]["target_prob"]
+
+        # for z1 in list(set([n for block in bfs_edges for n in block])):
+        #     print(f"summed target probs: {z1} ", graph.nodes[z1]["target_prob"])
 
     @staticmethod
     def get_hamming_generator(target_str: str) -> Iterator[str]:
@@ -104,7 +154,10 @@ class PathFinder(ABC):
         :return: List of path segments.
         """
         tol = 1e-10
+        # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
         bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
+        print("standard edges bfs :", bfs_edges)
+
         path = []
         for edge in bfs_edges:
             phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
@@ -123,6 +176,122 @@ class PathFinder(ABC):
                 graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
                 closest_zero_state = PathFinder.find_closest_zero_amplitude(target_state, edge[1])
                 path.append(PathSegment(list([edge[1], closest_zero_state]), phase_walk_time, 0))
+        print("standard path ", path)
+        return path
+    
+    def get_path_segments_leafsm(self, graph: Graph, target_state: dict[str, complex]) -> list[PathSegment]:
+        """
+        Returns a list of path segments describing state preparation path.
+        :param graph: Travel graph.
+        :param target_state: Dict of non-zero amplitudes in the target state.
+        :return: List of path segments.
+        """
+        tol = 1e-10
+        bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
+        path = []
+        print("edges bfs from pairs:", bfs_edges)
+        print("start from pairs", bfs_edges[0][0])
+        for edge in bfs_edges:
+            if graph.degree(edge[1]) != 1:
+                phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+                graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+                if abs(phase_walk_time) < tol:
+                    phase_walk_time = 0
+
+                amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+                graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+                path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time))
+
+            else:
+                phase_walk_time1 = (-1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+                graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+                if abs(phase_walk_time1) < tol:
+                    phase_walk_time1 = 0
+                amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+                graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+                phase_walk_time2 = (-1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
+                graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
+                path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time))
+        print("path from pairs", path)
+        return path
+
+
+    def get_path_segments_from_pairs_leafsm(self, graph: Graph, pairs: list[list[str, str]], target_state: dict[str, complex]) -> list[PathSegment]:
+        """
+        Returns a list of path segments describing state preparation path.
+        :param graph: Travel graph.
+        :param target_state: Dict of non-zero amplitudes in the target state.
+        :return: List of path segments.
+        """
+        tol = 1e-10
+        # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
+        bfs_edges = pairs
+        path = []
+        print("edges bfs from pairs:", bfs_edges)
+        print("start from pairs", bfs_edges[0][0])
+        for edge in bfs_edges:
+            if graph.degree(edge[1]) != 1:
+                phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+                graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+                if abs(phase_walk_time) < tol:
+                    phase_walk_time = 0
+
+                amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+                graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+                path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time))
+
+            else:
+                phase_walk_time1 = (-1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+                graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+                if abs(phase_walk_time1) < tol:
+                    phase_walk_time1 = 0
+                amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+                graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+                graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+                phase_walk_time2 = (-1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
+                graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
+                path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time))
+        print("path from pairs", path)
+        return path
+    
+    def get_path_segments_from_pairs(self, graph: Graph, pairs: list[list[str, str]], target_state: dict[str, complex]) -> list[PathSegment]:
+        """
+        Returns a list of path segments describing state preparation path.
+        :param graph: Travel graph.
+        :param target_state: Dict of non-zero amplitudes in the target state.
+        :return: List of path segments.
+        """
+        tol = 1e-10
+        # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
+        bfs_edges = pairs
+        path = []
+        print("edges bfs from pairs:", bfs_edges)
+        print("start from pairs", bfs_edges[0][0])
+        for edge in bfs_edges:
+            phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+            graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+            if abs(phase_walk_time) < tol:
+                phase_walk_time = 0
+
+            amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+            graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+            graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+            graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+            path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time))
+
+            if graph.degree(edge[1]) == 1:
+                phase_walk_time = (1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
+                graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
+                closest_zero_state = PathFinder.find_closest_zero_amplitude(target_state, edge[1])
+                path.append(PathSegment(list([edge[1], closest_zero_state]), phase_walk_time, 0))
+        print("path from pairs", path)
         return path
 
     def get_path(self, target_state: dict[str, complex]) -> list[PathSegment]:
@@ -134,6 +303,28 @@ class PathFinder(ABC):
         travel_graph = self.build_travel_graph(list(target_state.keys()))
         self.set_graph_attributes(travel_graph, target_state)
         return self.get_path_segments(travel_graph, target_state)
+    
+    def get_path_leafsm(self, target_state: dict[str, complex]) -> list[PathSegment]:
+        """
+        Returns state preparation path described by quantum walks.
+        :param target_state: Target state to prepare.
+        :return: List of path segments.
+        """
+        travel_graph = self.build_travel_graph(list(target_state.keys()))
+        self.set_graph_attributes(travel_graph, target_state)
+        return self.get_path_segments_leafsm(travel_graph, target_state)
+    
+    def get_path_from_pairs(self, target_state: dict[str, complex]) -> list[PathSegment]:
+        """
+        Returns state preparation path described by quantum walks.
+        :param target_state: Target state to prepare.
+        :return: List of path segments.
+        """
+        travel_graph, basis_pairs = self.build_travel_graph(list(target_state.keys()))
+        # print("initial pairs ", basis_pairs)
+        self.set_graph_attributes_from_pairs(travel_graph, basis_pairs, target_state)
+        # print("after pairs ", basis_pairs)
+        return self.get_path_segments_from_pairs_leafsm(travel_graph, basis_pairs, target_state)
 
 
 class PathFinderRandom(PathFinder):
@@ -143,6 +334,22 @@ class PathFinderRandom(PathFinder):
         random_tree = nx.relabel_nodes(random_tree, {i: bases[i] for i in range(len(bases))})
         random_tree.graph["start"] = bases[0]
         return random_tree
+    
+# @dataclass
+class PathFinderFromPairs(PathFinder):
+    """ Goes through the states in the same order they are listed in. """
+
+    def __init__(self, basis_pairs: Sequence[Sequence[str, str]]):
+        self.basis_pairs=basis_pairs
+
+    def build_travel_graph(self, _: list[str]) -> Graph:
+        graph = Graph()
+        for b1, b2 in self.basis_pairs:
+            # print(b1)
+            # print(b2)
+            graph.add_edge(b1, b2)
+        graph.graph["start"] = self.basis_pairs[0][0]
+        return graph
 
 
 @dataclass
@@ -211,6 +418,63 @@ class PathFinderMST(PathFinder):
         mst.graph["start"] = bases[0]
         return mst
 
+
+class PathFinderMHSLinear(PathFinder):
+    """Returns the Minimum Spanning Tree on the basis states. """
+    def build_travel_graph(self, states: list[str]) -> Graph:
+        mhs_scores=self.get_all_mhs_scores(states)
+        ordered_states=self.order_basis_states_mhs(states)
+        print(states)
+        print(ordered_states)
+        graph = Graph()
+        root=ordered_states[0]
+        ordered_states.remove(root)
+        # ordered_states=self.order_by_hamming_dist(root, ordered_states)
+        path=[]
+        # for i in range(len(ordered_states) - 1):
+        #     graph.add_edge(ordered_states[i], ordered_states[i + 1])
+        # graph.graph["start"] = ordered_states[0]
+        for elem in ordered_states[::-1]:
+            graph.add_edge(root, elem)
+            path.append([root, elem])
+        graph.graph["start"] = root
+        # bases=[list(reversed(pair)) for pair in bases]
+        # for pair in bases:
+        #     graph.add_edge(pair[0], pair[1])
+        # graph.graph["start"] = bases[0][0]
+        return graph, path
+    
+    @staticmethod
+    def order_by_hamming_dist(origin, remaining_basis):
+        '''Orders the remaining basis by Hamming distance from origin.'''
+        return sorted(remaining_basis, key=lambda elem: hamming_dist(origin, elem))
+    
+    @staticmethod
+    def get_mhs_score(elem, remaining_basis):
+        diffs= [[ind for ind in range(len(elem)) if elem[ind] != z1[ind]] for z1 in remaining_basis]
+        hitman = Hitman()
+        for inds_set in diffs:
+            hitman.hit(inds_set)
+        print(hitman.get())
+        return len(hitman.get())
+    
+    @staticmethod
+    def get_all_mhs_scores(basis:list):
+        return [PathFinderMHSLinear.get_mhs_score(elem, [elem2 for elem2 in basis if elem2!=elem]) for elem in basis]
+
+    @staticmethod
+    def order_basis_states_mhs(basis:list):
+        def _count_elements(basis):
+            return sum([len(block) for block in basis])
+        def _create_remaining_basis(elem, basis):
+            return [elem2 for elem2 in basis if elem2!=elem]
+        orig_basis=deepcopy(basis)
+        indices=range(len(basis[0]))
+        return sorted(basis, key=lambda elem:
+                                  (PathFinderMHSLinear.get_mhs_score(elem, _create_remaining_basis(elem, orig_basis)),
+                _count_elements([[ind for ind in indices if elem[ind] != z1[ind]] for z1 in _create_remaining_basis(elem, orig_basis)])))
+
+
 @dataclass
 class GleinigPathFinder(PathFinder):
     """Returns the Minimum Spanning Tree on the basis states. """
@@ -218,35 +482,60 @@ class GleinigPathFinder(PathFinder):
         val=1/np.sqrt(len(states))
         state_dict={k: val for k in states}
         walker=GleinigWalk(state_dict)
-        walks=walker.get_gleinig_path_pframes()
+        walks=walker.get_gleinig_path()
         bases=walks#list(reversed(walks))
         # print(bases)
         graph = Graph()
-        for i in range(len(bases) - 1):
-            graph.add_edge(bases[i], bases[i + 1])
-        graph.graph["start"] = bases[0]
+        # for i in range(len(bases) - 1):
+        #     graph.add_edge(bases[i], bases[i + 1])
+        # graph.graph["start"] = bases[0]
+        # bases=[list(reversed(pair)) for pair in bases]
+        for pair in bases:
+            graph.add_edge(pair[0], pair[1])
+        graph.graph["start"] = bases[0][0]
+        return graph, walks
+    
+@dataclass
+class GleinigPathFinderPframes(PathFinder):
+    """Returns the Minimum Spanning Tree on the basis states. """
+    def build_travel_graph(self, states: list[str]) -> Graph:
+        val=1/np.sqrt(len(states))
+        state_dict={k: val for k in states}
+        walker=GleinigWalk(state_dict)
+        walks, root=walker.get_gleinig_path_pairs_pframes()
+        # print(walks)
+        basis_pairs=list(reversed(walks))
+        # basis_pairs=[('00110', '00111'), ('00111', '00001'), ('00001', '01011'), ('01011', '01001')]
+        # basis_pairs=[['10010001', '01110000'], ['10010001', '01110101'], ['10010001', '11001110'], ['10010001', '11011011'], ['10010001', '01101111'], ['10010001', '11010001'], ['10010001', '00001111']]
+        # print(basis_pairs)
+        # basis_pairs=[['10010001', '01110000'], ['10010001', '01110101'], ['10010001', '11001110'], ['10010001', '11011011'], ['10010001', '01101111'], ['10010001', '11010001'], ['10010001', '00001111']]
+        # print(bases)
+        graph = Graph()
+        for z1, z2 in basis_pairs:
+            graph.add_edge(z1, z2)
+        graph.graph["start"] = root# basis_pairs[0][0]
+        # graph.graph["start"] = basis_pairs[0][0]
         # bases=[list(reversed(pair)) for pair in bases]
         # for pair in bases:
         #     graph.add_edge(pair[0], pair[1])
         # graph.graph["start"] = bases[0][0]
-        return graph
-    
+        return graph, basis_pairs
 
 class GleinigWalk():
     def __init__(self, state_dict) -> None:
-        self.state_dict=state_dict
+        self.state_dict=deepcopy(state_dict)
 
     def get_gleinig_path(self):
         path=[]
         while(len(self.state_dict.keys())>1):
             bitstr1, bitstr2, _, _ = self._select_strings(self.state_dict)
-            self.state_dict.pop(bitstr1)
+            self.state_dict.pop(bitstr2)
             # path.append([bitstr1, bitstr2])
-            path.append(bitstr1)
-            if len(self.state_dict.keys())==1:
-                path.append(bitstr2)
-            # print(path)
-        return path
+            path.append([bitstr1, bitstr2])
+            # if len(self.state_dict.keys())==1:
+            #     path.append(bitstr2)
+        print(path[::-1])
+        return path[::-1]
     
     def get_gleinig_path_pframes(self):
         bases_original=list(self.state_dict.keys())
@@ -278,10 +567,44 @@ class GleinigWalk():
             bases.pop(idx1)
             bases_original.pop(idx1)
         path+=bases_original
+        # print(path)
         return path
     
+    def get_gleinig_path_pairs_pframes(self):
+        bases_original=list(self.state_dict.keys())
+        bases=list(self.state_dict.keys())
+        bitstr1, bitstr2, _, _ = self._select_strings_pframes(self.state_dict)
+        idx1=bases.index(bitstr1)
+        idx2=bases.index(bitstr2)
+        path=[]
+        path+=[[bases_original[idx1], bases_original[idx2]]]
+        remove_idxs=[idx2]
+        bases_original=[elem for i, elem in enumerate(bases_original) if i not in remove_idxs]
+        bases=[elem for i, elem in enumerate(bases) if i not in remove_idxs]
+        while(len(bases)>1):
+            # path.append([bitstr1, bitstr2])
+            temp_basis_sts=[[int(char) for char in elem] for elem in bases]
+            diff_inds = np.where(np.array(path[-1][0]) != np.array(path[-1][1]))[0]
+            for ind in diff_inds[1::]:
+                update_visited(temp_basis_sts, diff_inds[0], ind)
+            temp_basis_sts=[[str(char) for char in elem] for elem in temp_basis_sts]
+            bases=["".join(elem) for elem in temp_basis_sts]
+
+            # bitstr1=sorted(bases, key=lambda x: int(x, 2))[0]
+            val=1/np.sqrt(len(bases))
+            state_dict={k: val for k in bases} #construct a dummy state
+
+            bitstr1, bitstr2, _, _ = self._select_strings_pframes(state_dict)
+            idx1=bases.index(bitstr1)
+            idx2=bases.index(bitstr2)
+            path.append([bases_original[idx1], bases_original[idx2]])
+            bases.pop(idx2)
+            bases_original.pop(idx2)
+        # path+=bases_original
+        return path, bases_original[0]
+    
     @staticmethod
-    def select_first_string(state_dict):
+    def _select_strings_pframes(state_dict):
         """
         Searches for the states described by the bit strings bitstr1 and bitstr2 to be merged
         Args:
@@ -308,15 +631,53 @@ class GleinigWalk():
         dif_values.pop()
         bitstr1 = b_strings1[0]
 
-        # # Searching for bitstr2
-        # b_strings2.remove(bitstr1)
-        # b_strings1 = GleinigWalk._build_bit_string_set(b_strings2, dif_qubits, dif_values)
-        # (b_strings1, dif_qubits, dif_values) = GleinigWalk._bit_string_search(
-        #     b_strings1, dif_qubits, dif_values
-        # )
-        # bitstr2 = b_strings1[0]
+        # Searching for bitstr2
+        b_strings2.remove(bitstr1)
+        b_strings1 = GleinigWalk._build_bit_string_set(b_strings2, dif_qubits, dif_values)
+        (b_strings1, dif_qubits, dif_values) = GleinigWalk._bit_string_search(
+            b_strings1, dif_qubits, dif_values
+        )
+        bitstr2 = b_strings1[0]
 
-        return bitstr1#, bitstr2, dif_qubit, dif_qubits
+        return bitstr1, bitstr2, dif_qubit, dif_qubits
+    
+    # @staticmethod
+    # def select_first_string(state_dict):
+    #     """
+    #     Searches for the states described by the bit strings bitstr1 and bitstr2 to be merged
+    #     Args:
+    #     state_dict: A dictionary with the non-zero amplitudes associated to their corresponding
+    #                 binary strings as keys e.g.: {'001': <value>, '101': <value>}
+    #     Returns:
+    #     bitstr1: First binary string
+    #     bitstr2: Second binary string
+    #     dif_qubit: Qubit index to be used as target for the merging operation
+    #     dif_qubits: List of qubit indexes where bitstr1 and bitstr2 must be equal, because the
+    #                 correspondig qubits of those indexes are to be used as control for the
+    #                 merging operation
+    #     """
+    #     # Initialization
+    #     dif_qubits = []
+    #     dif_values = []
+    #     b_strings1 = b_strings2 = list(state_dict.keys())
+
+    #     # Searching for bitstr1
+    #     (b_strings1, dif_qubits, dif_values) = GleinigWalk._bit_string_search(
+    #         b_strings1, dif_qubits, dif_values
+    #     )
+    #     dif_qubit = dif_qubits.pop()
+    #     dif_values.pop()
+    #     bitstr1 = b_strings1[0]
+
+    #     # # Searching for bitstr2
+    #     # b_strings2.remove(bitstr1)
+    #     # b_strings1 = GleinigWalk._build_bit_string_set(b_strings2, dif_qubits, dif_values)
+    #     # (b_strings1, dif_qubits, dif_values) = GleinigWalk._bit_string_search(
+    #     #     b_strings1, dif_qubits, dif_values
+    #     # )
+    #     # bitstr2 = b_strings1[0]
+
+    #     return bitstr1#, bitstr2, dif_qubit, dif_qubits
 
     @staticmethod
     def _select_strings(state_dict):
@@ -357,6 +718,38 @@ class GleinigWalk():
         return bitstr1, bitstr2, dif_qubit, dif_qubits
     
     @staticmethod
+    def _bit_string_search_hardest(b_strings, dif_qubits, dif_values):
+        """
+        Searches for the bit strings with unique qubit values in `dif_values`
+        on indexes `dif_qubits`.
+        Args:
+        b_strings: List of binary strings where the search is to be performed
+                    e.g.: ['000', '010', '101', '111']
+        dif_qubits: List of indices on a binary string of size N e.g.: [1, 3, 5]
+        dif_values: List of values each qubit must have on indexes stored in dif_qubits [0, 1, 1]
+        Returns:
+        b_strings: One size list with the string found, to have values dif_values on indexes
+                    dif_qubits
+        dif_qubits: Updated list with new indexes
+        dif_values: Updated list with new values
+        """
+        temp_strings = b_strings
+        while len(temp_strings) > 1:
+            bit, t_0, t_1 = GleinigWalk._maximizing_difference_bit_search(
+                temp_strings, dif_qubits
+            )
+            dif_qubits.append(bit)
+            # if len(t_0) < len(t_1): # original
+            if len(t_0) > len(t_1):
+                dif_values.append("0")
+                temp_strings = t_0
+            else:
+                dif_values.append("1")
+                temp_strings = t_1
+
+        return temp_strings, dif_qubits, dif_values
+    
+    @staticmethod
     def _bit_string_search(b_strings, dif_qubits, dif_values):
         """
         Searches for the bit strings with unique qubit values in `dif_values`
@@ -378,7 +771,8 @@ class GleinigWalk():
                 temp_strings, dif_qubits
             )
             dif_qubits.append(bit)
-            if len(t_0) < len(t_1):
+            if len(t_0) < len(t_1): # original
+            # if len(t_0) > len(t_1):
                 dif_values.append("0")
                 temp_strings = t_0
             else:
@@ -667,12 +1061,6 @@ def maximizing_difference_bit_search(b_strings, dif_qubits):
 
         return bit_index, t_0, t_1
 
-# def count_nodes(root):
-#     if root.left:
-#         return 1 + count_nodes(root.left)
-#     if root.right:
-#         return 1 + count_nodes(root.right)
-
 def get_heavy_side_bases(root, first_iter=True, leafs=None, paths=None):
     if first_iter:
         first, paths=get_start_leaf(root)
@@ -721,21 +1109,6 @@ def get_start_leaf(root, paths=None):
         paths.append(root.right)
         return get_start_leaf(root.right, paths)
 
-#     _get_heavy_side_bases_recurs(root, leafs)
-#     print(leafs)
-#     return [node.value["bit_strs"][0] for node in leafs]
-
-# def _get_heavy_side_bases_recurs(root, bases):
-#     if root.left or root.right:
-#         init_node=get_initial_node(root)
-#         # print("init: ", init_node.value)
-#         bases.append(init_node)
-#         if init_node.parent.value["direction"]=="left":
-#             _get_heavy_side_bases_recurs(init_node.parent.right, bases)
-#         else:
-#             _get_heavy_side_bases_recurs(init_node.parent.left, bases)
-#     else:
-#         bases.append(root)
 
 def get_initial_node(root):
     root_params=root.value
@@ -808,21 +1181,23 @@ class PathFinderHammingWeight(PathFinder):
         return hamming_weight_dict
     
     def sort_bases_by_hamming_weight(self, bases):
-        hamming_weight_dict={}
-        for elem in bases:
-            # print(elem)
-            elem_weight=get_hamming_weight(elem)
-            hw_list=hamming_weight_dict.get(elem_weight, [])
-            if not hw_list:
-                hamming_weight_dict[elem_weight]=[elem]
-            else:
-                hw_list.append(elem)
-        # print(hamming_weight_dict)
-        hamming_weight_dict={k:(sorted(v, key=lambda x: int(x, 2)) if len(v)>=2 else v) for k, v in hamming_weight_dict.items() }
-        # hamming_weight_dict={k:(self._get_gleinig_qwalk(v) if len(v)>2 else v) for k, v in hamming_weight_dict.items() }
-        # print(hamming_weight_dict)
+        # hamming_weight_dict={}
+        # for elem in bases:
+        #     # print(elem)
+        #     elem_weight=get_hamming_weight(elem)
+        #     hw_list=hamming_weight_dict.get(elem_weight, [])
+        #     # if not hw_list:
+        #     # else:
+        #     hw_list.append(elem)
+        #     hamming_weight_dict[elem_weight]=hw_list
 
-        sorted_bases=self._get_sorted_bases(hamming_weight_dict, False)
+        # # print(hamming_weight_dict)
+        # hamming_weight_dict={k:(sorted(v, key=lambda x: int(x, 2))) for k, v in hamming_weight_dict.items() }
+        # # hamming_weight_dict={k:(self._get_gleinig_qwalk(v) if len(v)>2 else v) for k, v in hamming_weight_dict.items() }
+        # # print(hamming_weight_dict)
+
+        # sorted_bases=self._get_sorted_bases(hamming_weight_dict, False)
+        sorted_bases=sorted(bases, key= lambda x: (get_hamming_weight(x), int(x, 2)))
         assert len(sorted_bases)==len(bases), "lengths of sorted bases and bases should match"
         # print(sorted_bases)
         return sorted_bases
@@ -930,11 +1305,11 @@ def hamming_dist(z1, z2):
     return sum([b1 != b2 for b1, b2 in zip(z1,z2)])
     
 def get_hamming_weight(bits):
-    tot=0
-    for elem in bits:
-        if elem=="1":
-            tot+= 1
-    return tot
+    # tot=0
+    # for elem in bits:
+    #     if elem=="1":
+    #         tot+= 1
+    return bits.count("1")
     
 def get_shp(bases: list[str]) -> list[str]:
     # print(bases)
