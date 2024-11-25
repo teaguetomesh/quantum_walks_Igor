@@ -55,7 +55,7 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
     elif method=="gleinig":
         merger=MergeInitialize(target_state)
         circuit=merger._define_initialize()
-        print(circuit)
+        # print(circuit)
     # elif method=="gleinig_qwalk":
     #     path = path_finder.get_path(target_state)
     #     circuit = PathConverter.convert_path_to_circuit(path, reduce_controls, remove_leading_cx, add_barriers)
@@ -119,9 +119,9 @@ def merge_state_files():
 
 def run_prepare_state(init_state, num_qubits_all, file_idxs):
     # method = "qiskit"
-    # method = "gleinig_qwalk"
+    method = "gleinig_qwalk"
     # method = "walks"
-    method="gleinig"
+    # method="gleinig"
     # path_finder = PathFinderRandom()
     # path_finder = PathFinderLinear()
     # path_finder = PathFinderGrayCode()
@@ -135,7 +135,7 @@ def run_prepare_state(init_state, num_qubits_all, file_idxs):
     # path_finder = PathFinderMST()
     # num_qubits_all = np.array([5])
     # num_qubits_all = np.array(list(range(5, 6)))
-    num_amplitudes_all = num_qubits_all # possible values are [num_qubits_all, num_qubits_all**2, 2**(num_qubits_all-1)]
+    num_amplitudes_all = num_qubits_all**2 # possible values are [num_qubits_all, num_qubits_all**2, 2**(num_qubits_all-1)]
     # out_col_name = "qiskit"
     # out_col_name = "gleinig_qwalk"
     # out_col_name="gleinig"
@@ -264,9 +264,13 @@ def prepare_state_brute(target_state: dict[str, complex], num_amplitudes: int) -
         if not best_cx or best_cx>cx_count:
             best_cx=cx_count
             best_path=perm
-    
+    path_finder=PathFinderLinear(list(best_path))
+    path = path_finder.get_path_leafsm(target_state)
+    circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(path, reduce_controls, remove_leading_cx, add_barriers)
     # print(f"Min CX: {np.min(results)}\n")
     best_path_basis=[list(target_state.keys())[b] for b in best_path]
+    circuit.draw(output="mpl", fold=-1, filename=f"linear_exhaust_{[best_path_basis[0], best_path_basis[1]]}.jpg")
+
     print(f"best linear path: ", list(zip(best_path_basis[0:-1:], best_path_basis[1::])))
     print("best cx: ", best_cx)
     
@@ -286,6 +290,7 @@ def prepare_state_brute_star(target_state: dict[str, complex], num_amplitudes: i
     best_cx=None
     best_path=None
     best_circ_transpiled=None
+    best_circ=None
     all_basis_states=list(target_state.keys())
     best_graph=None
     for root in all_basis_states:
@@ -324,9 +329,10 @@ def prepare_state_brute_star(target_state: dict[str, complex], num_amplitudes: i
                 best_circ_transpiled=circuit_transpiled
                 best_graph=graph
             # print(circuit)
+    circuit.draw(output="mpl", fold=-1, filename=f"star_exhaust_{best_path[0]}.jpg")
     labels = nx.get_edge_attributes(graph,'weight')
     pos = nx.spring_layout(graph)
-    nx.draw(graph, pos, with_labels=True, node_color="lightblue")
+    nx.draw(best_graph, pos, with_labels=True, node_color="lightblue")
     nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
 
     # Save the figure to a file
@@ -757,9 +763,9 @@ if __name__ == "__main__":
 
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
     qubits=np.array(list(range(6,7)))
-    file_indices=[0,1]
+    file_indices=[2,3]
     # run_bruteforce_order_state(1, "linear", qubits, file_indices)
-    run_bruteforce_order_state(1, "star", qubits, file_indices)
-    # run_prepare_state(init_state, qubits, file_indices)
+    # run_bruteforce_order_state(1, "star", qubits, file_indices)
+    run_prepare_state(init_state, qubits, file_indices)
     # run_greedy_order_state(num_workers=1)
     # run_bruteforce_order_state(num_workers=6)

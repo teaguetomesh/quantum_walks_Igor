@@ -384,7 +384,9 @@ class PathConverter:
             # print("popped destination transformed: ", visited_transformed)
             # print("z1 z2 diffs ", diff_inds)
             # print("visited ", visited)
-            if len(diff_inds)==1:
+            if segment.interaction_index:
+                interaction_ind=segment.interaction_index
+            elif len(diff_inds)==1:
                 interaction_ind=diff_inds[0]
             else:
                 interaction_ind=PathConverter.get_good_interaction_idx(diff_inds, visited, visited.index(origin), segment.labels[1])

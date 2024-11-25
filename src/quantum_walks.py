@@ -33,6 +33,7 @@ class PathSegment:
     labels: list[str, str]
     phase_time: float
     amplitude_time: float
+    interaction_index: int=None
 
 @dataclass
 class LeafPathSegment:
@@ -47,6 +48,7 @@ class LeafPathSegment:
     phase_time1: float
     phase_time2: float
     amplitude_time: float
+    interaction_index: int=None
 
 
 @dataclass
@@ -440,7 +442,8 @@ class PathFinderMHSLinear(PathFinder):
             easy_z1=basis_original[easy_idx]
             temp_basis_search_hard=deepcopy(basis_mutable)
             temp_basis_search_hard.remove(easy_node) #remove easy node to search for hardest node.
-            hard_node=self.order_basis_states_mhs(temp_basis_search_hard)[-1]
+            print("original ", states)
+            hard_node=self.order_by_hamming_dist(easy_node, temp_basis_search_hard)[0]
             hard_idx=basis_mutable.index(hard_node)
             hard_z2=basis_original[hard_idx]
             path.append([easy_z1, hard_z2])
@@ -507,11 +510,17 @@ class PathFinderMHSLinear(PathFinder):
     @staticmethod
     def order_by_hamming_dist(origin, remaining_basis):
         '''Orders the remaining basis by Hamming distance from origin.'''
-        return sorted(remaining_basis, key=lambda elem: hamming_dist(origin, elem))
+        print("origin ", origin)
+        print("remaining basis ", remaining_basis)
+        return sorted(remaining_basis, key=lambda elem: (hamming_dist(origin, elem),))
+                    # PathFinderMHSLinear.get_mhs_score(elem, remaining_basis)))
     
     @staticmethod
     def get_mhs_score(elem, remaining_basis):
+        print("remaining basis ", remaining_basis)
+        print("origin ", elem)
         diffs= [[ind for ind in range(len(elem)) if elem[ind] != z1[ind]] for z1 in remaining_basis]
+        print(f"diffs {diffs}")
         hitman = Hitman()
         for inds_set in diffs:
             hitman.hit(inds_set)
