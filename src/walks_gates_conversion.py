@@ -94,15 +94,15 @@ class PathConverter:
         remaining_basis=deepcopy(visited_transformed)
         remaining_basis.pop(origin_ind)
         diffs_origin_rest =[[ind for ind in range(len(origin_node)) if origin_node[ind] != z1[ind]] for z1 in remaining_basis]
-        print("diffs ", diffs)
-        print("diffs origin rest ", diffs_origin_rest)
-        for idx in diffs:
-            print(counter_func(idx, diffs_origin_rest))
+        # print("diffs ", diffs)
+        # print("diffs origin rest ", diffs_origin_rest)
+        # for idx in diffs:
+            # print(counter_func(idx, diffs_origin_rest))
         sorted_diffs=sorted(diffs, key=
                             lambda temp_interaction_idx: (
                             PathConverter._get_good_interaction_idx(diffs, visited_transformed, origin_ind, temp_interaction_idx),
                             counter_func(temp_interaction_idx, diffs_origin_rest)))
-        print("sorted z1 z2 diffs, ", sorted_diffs)
+        # print("sorted z1 z2 diffs, ", sorted_diffs)
         return sorted_diffs[0]
 
     @staticmethod
@@ -384,14 +384,15 @@ class PathConverter:
             # print("popped destination transformed: ", visited_transformed)
             # print("z1 z2 diffs ", diff_inds)
             # print("visited ", visited)
-            if segment.interaction_index:
+            if segment.interaction_index is not None:
                 interaction_ind=segment.interaction_index
             elif len(diff_inds)==1:
                 interaction_ind=diff_inds[0]
             else:
                 interaction_ind=PathConverter.get_good_interaction_idx(diff_inds, visited, visited.index(origin), segment.labels[1])
             # interaction_ind = diff_inds[0]
-            
+            # print("diff inds ", diff_inds)
+            # print("interaction idx ", interaction_ind)
             diff_inds.remove(interaction_ind)
             for ind in diff_inds:
             # for ind in diff_inds[1:]:
@@ -416,44 +417,52 @@ class PathConverter:
                 if visited_transformed[origin_ind][ind] == 0:
                     qc.x(ind)
 
-            # rz_angle = 2 * segment.phase_time
-            # rx_angle = 2 * segment.amplitude_time
-            # if origin[interaction_ind] == 1:
-            #     rz_angle *= -1
-
-            # if not control_indices:
-            #     if rz_angle != 0:
-            #         rz_gate = RZGate(rz_angle)
-            #         qc.append(rz_gate, control_indices + [interaction_ind])
-            #     if rx_angle != 0:
-            #         rx_gate = RXGate(rx_angle)
-            #         qc.append(rx_gate, control_indices + [interaction_ind])
-            # else:
-            #     gate_definition=np.array([[np.exp(-1j*rz_angle/2)*np.cos(rx_angle/2),-1j*np.exp(1j*rz_angle/2)*np.sin(rx_angle/2)],
-            #                                 [-1j*np.exp(-1j*rz_angle/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle/2)*np.cos(rx_angle/2)]])
-            #     # gate_definition = UGate(rx_angle, -(rz_angle/2+3*np.pi/2), -rz_angle/2+3*np.pi/2, label="U").to_matrix()
-            #     Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
+           
             if isinstance(segment, PathSegment):
-                rx_angle = 2 * segment.amplitude_time
-                rx_angle = -rx_angle #do the opposite since we will be inverting
-                # print("rx angle ", rx_angle)
-                if rx_angle != 0:
-                    rx_gate = RXGate(rx_angle)
-                    if len(control_indices) > 0:
-                        rx_gate = rx_gate.control(len(control_indices))
-                    qc.append(rx_gate, control_indices + [interaction_ind])
-                    # visited.append(destination)
-
-                rz_angle = 2 * segment.phase_time
-                rz_angle = -rz_angle #do the opposite since we will be inverting
-                # print("rz angle ", rz_angle)
+                rz_angle = -2 * segment.phase_time
+                rx_angle = -2 * segment.amplitude_time
                 if origin[interaction_ind] == 1:
                     rz_angle *= -1
-                if rz_angle != 0:
-                    rz_gate = RZGate(rz_angle)
-                    if len(control_indices) > 0:
-                        rz_gate = rz_gate.control(len(control_indices))
-                    qc.append(rz_gate, control_indices + [interaction_ind])
+
+                if not control_indices:
+                    if rx_angle != 0:
+                        rx_gate = RXGate(rx_angle)
+                        qc.append(rx_gate, control_indices + [interaction_ind])
+                    if rz_angle != 0:
+                        rz_gate = RZGate(rz_angle)
+                        qc.append(rz_gate, control_indices + [interaction_ind])
+                else:
+                    # gate_definition=np.array([[np.exp(-1j*rz_angle/2)*np.cos(rx_angle/2),-1j*np.exp(1j*rz_angle/2)*np.sin(rx_angle/2)],
+                    #                             [-1j*np.exp(-1j*rz_angle/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle/2)*np.cos(rx_angle/2)]])
+                    gate_definition=np.array([[np.exp(-1j*rz_angle/2)*np.cos(rx_angle/2),-1j*np.exp(-1j*rz_angle/2)*np.sin(rx_angle/2)],
+                                            [-1j*np.exp(1j*rz_angle/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle/2)*np.cos(rx_angle/2)]])
+                    Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
+
+                    # gate_definition=np.array([[np.exp(-1j*rz_angle/2)*np.cos(rx_angle/2),-1j*np.exp(-1j*rz_angle/2)*np.sin(rx_angle/2)],
+                    #                         [-1j*np.exp(1j*rz_angle/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle/2)*np.cos(rx_angle/2)]])
+                    # gate_definition=UnitaryGate(gate_definition).control(len(control_indices))
+                    # qc.append(gate_definition, control_indices+ [interaction_ind])
+
+                # rx_angle = 2 * segment.amplitude_time
+                # rx_angle = -rx_angle #do the opposite since we will be inverting
+                # # print("rx angle ", rx_angle)
+                # if rx_angle != 0:
+                #     rx_gate = RXGate(rx_angle)
+                #     if len(control_indices) > 0:
+                #         rx_gate = rx_gate.control(len(control_indices))
+                #     qc.append(rx_gate, control_indices + [interaction_ind])
+                #     # visited.append(destination)
+
+                # rz_angle = 2 * segment.phase_time
+                # rz_angle = -rz_angle #do the opposite since we will be inverting
+                # # print("rz angle ", rz_angle)
+                # if origin[interaction_ind] == 1:
+                #     rz_angle *= -1
+                # if rz_angle != 0:
+                #     rz_gate = RZGate(rz_angle)
+                #     if len(control_indices) > 0:
+                #         rz_gate = rz_gate.control(len(control_indices))
+                #     qc.append(rz_gate, control_indices + [interaction_ind])
             else: #LeafPathSegment. Everything should be backwards.
                 rz_angle1=-segment.phase_time1
                 rz_angle2=-segment.phase_time2

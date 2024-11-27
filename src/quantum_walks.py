@@ -80,14 +80,8 @@ class PathFinder(ABC):
         bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))[::-1]
         # print(bfs_edges)
 
-        # for z1 in list(set([n for block in bfs_edges for n in block])):
-        #     print(f"initial target probs: {z1} ", graph.nodes[z1]["target_prob"])
-
         for edge in bfs_edges:
             graph.nodes[edge[0]]["target_prob"] += graph.nodes[edge[1]]["target_prob"]
-
-        # for z1 in list(set([n for block in bfs_edges for n in block])):
-        #     print(f"summed target probs: {z1} ", graph.nodes[z1]["target_prob"])
 
     def set_graph_attributes_from_pairs(self, graph: Graph, all_edges, target_state: dict[str, complex]):
         """
@@ -105,14 +99,8 @@ class PathFinder(ABC):
         # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))[::-1]
         bfs_edges=all_edges[::-1] #sum from bottom up
 
-        # for z1 in list(set([n for block in bfs_edges for n in block])):
-        #     print(f"initial target probs: {z1} ", graph.nodes[z1]["target_prob"])
-
         for edge in bfs_edges:
             graph.nodes[edge[0]]["target_prob"] += graph.nodes[edge[1]]["target_prob"]
-
-        # for z1 in list(set([n for block in bfs_edges for n in block])):
-        #     print(f"summed target probs: {z1} ", graph.nodes[z1]["target_prob"])
 
     @staticmethod
     def get_hamming_generator(target_str: str) -> Iterator[str]:
@@ -158,7 +146,7 @@ class PathFinder(ABC):
         tol = 1e-10
         # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
         bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
-        print("standard edges bfs :", bfs_edges)
+        # print("standard edges bfs :", bfs_edges)
 
         path = []
         for edge in bfs_edges:
@@ -178,7 +166,7 @@ class PathFinder(ABC):
                 graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
                 closest_zero_state = PathFinder.find_closest_zero_amplitude(target_state, edge[1])
                 path.append(PathSegment(list([edge[1], closest_zero_state]), phase_walk_time, 0))
-        print("standard path ", path)
+        # print("standard path ", path)
         return path
     
     def get_path_segments_leafsm(self, graph: Graph, target_state: dict[str, complex]) -> list[PathSegment]:
@@ -191,8 +179,8 @@ class PathFinder(ABC):
         tol = 1e-10
         bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
         path = []
-        print("edges bfs from pairs:", bfs_edges)
-        print("start from pairs", bfs_edges[0][0])
+        # print("edges bfs from pairs:", bfs_edges)
+        # print("start from pairs", bfs_edges[0][0])
         for edge in bfs_edges:
             if graph.degree(edge[1]) != 1:
                 phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
@@ -218,7 +206,7 @@ class PathFinder(ABC):
                 phase_walk_time2 = (-1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
                 graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
                 path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time))
-        print("path from pairs", path)
+        # print("path from pairs", path)
         return path
 
 
@@ -233,9 +221,14 @@ class PathFinder(ABC):
         # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
         bfs_edges = pairs
         path = []
-        print("edges bfs from pairs:", bfs_edges)
-        print("start from pairs", bfs_edges[0][0])
+        # print("edges bfs from pairs:", bfs_edges)
+        # print("start from pairs", bfs_edges[0][0])
         for edge in bfs_edges:
+            if len(edge)==3:
+                interaction_ind=edge[2]
+                edge=edge[:-1:]
+            else:
+                interaction_ind=None
             if graph.degree(edge[1]) != 1:
                 phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
                 graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
@@ -246,7 +239,7 @@ class PathFinder(ABC):
                 graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
                 graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
                 graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
-                path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time))
+                path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time, interaction_index=interaction_ind))
 
             else:
                 phase_walk_time1 = (-1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
@@ -259,9 +252,55 @@ class PathFinder(ABC):
                 graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
                 phase_walk_time2 = (-1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
                 graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
-                path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time))
-        print("path from pairs", path)
+                path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time, interaction_index=interaction_ind))
+        # print("path from pairs", path)
         return path
+    
+    # def get_path_segments_from_pairs_leafsm_test(self, graph: Graph, pairs: list[list[str, str]], target_state: dict[str, complex]) -> list[PathSegment]:
+    #     """
+    #     Returns a list of path segments describing state preparation path.
+    #     :param graph: Travel graph.
+    #     :param target_state: Dict of non-zero amplitudes in the target state.
+    #     :return: List of path segments.
+    #     """
+    #     tol = 1e-10
+    #     # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
+    #     bfs_edges = pairs[::-1] #we're doing an RXRZ pattern.
+    #     path = []
+    #     # print("edges bfs from pairs:", bfs_edges)
+    #     # print("start from pairs", bfs_edges[0][0])
+    #     for edge in bfs_edges:
+    #         if len(edge)==3:
+    #             interaction_ind=edge[2]
+    #             edge=edge[:-1:]
+    #         else:
+    #             interaction_ind=None
+    #         if graph.degree(edge[1]) != 1:
+    #             phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+    #             graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+    #             if abs(phase_walk_time) < tol:
+    #                 phase_walk_time = 0
+
+    #             amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+    #             graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+    #             graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+    #             graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+    #             path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time, interaction_index=interaction_ind))
+
+    #         else:
+    #             phase_walk_time1 = (-1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
+    #             graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
+    #             if abs(phase_walk_time1) < tol:
+    #                 phase_walk_time1 = 0
+    #             amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
+    #             graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
+    #             graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
+    #             graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
+    #             phase_walk_time2 = (-1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
+    #             graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
+    #             path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time, interaction_index=interaction_ind))
+    #     # print("path from pairs", path)
+    #     return path
     
     def get_path_segments_from_pairs(self, graph: Graph, pairs: list[list[str, str]], target_state: dict[str, complex]) -> list[PathSegment]:
         """
@@ -274,8 +313,8 @@ class PathFinder(ABC):
         # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
         bfs_edges = pairs
         path = []
-        print("edges bfs from pairs:", bfs_edges)
-        print("start from pairs", bfs_edges[0][0])
+        # print("edges bfs from pairs:", bfs_edges)
+        # print("start from pairs", bfs_edges[0][0])
         for edge in bfs_edges:
             phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
             graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
@@ -293,7 +332,7 @@ class PathFinder(ABC):
                 graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
                 closest_zero_state = PathFinder.find_closest_zero_amplitude(target_state, edge[1])
                 path.append(PathSegment(list([edge[1], closest_zero_state]), phase_walk_time, 0))
-        print("path from pairs", path)
+        # print("path from pairs", path)
         return path
 
     def get_path(self, target_state: dict[str, complex]) -> list[PathSegment]:
@@ -421,36 +460,183 @@ class PathFinderMST(PathFinder):
         return mst
 
 
-class PathFinderMHSLinear(PathFinder):
+class PathFinderMHSNonlinear(PathFinder):
     """The Minimum Hitting Set method on the basis states. """
     def build_travel_graph(self, states: list[str]) -> Graph:
-        # mhs_scores=self.get_all_mhs_scores(states)
-        # ordered_states=self.order_basis_states_mhs(states)
         # print(states)
         # print(ordered_states)
         graph = Graph()
-        # root=ordered_states[0]
-        # ordered_states.remove(root)
-        # ordered_states=self.order_by_hamming_dist(root, ordered_states)
         path=[]
         basis_original=deepcopy(states)
         basis_mutable=deepcopy(states)
+        # indices=list(range(len(basis_original[0])))
         for _ in range(len(states)-1):
             # print("ordered states easiest firs ", self.order_basis_states_mhs(basis_mutable))
-            easy_node=self.order_basis_states_mhs(basis_mutable)[0]
-            easy_idx=basis_mutable.index(easy_node)
-            easy_z1=basis_original[easy_idx]
-            temp_basis_search_hard=deepcopy(basis_mutable)
-            temp_basis_search_hard.remove(easy_node) #remove easy node to search for hardest node.
-            print("original ", states)
-            hard_node=self.order_by_hamming_dist(easy_node, temp_basis_search_hard)[0]
-            hard_idx=basis_mutable.index(hard_node)
-            hard_z2=basis_original[hard_idx]
-            path.append([easy_z1, hard_z2])
-            basis_mutable.pop(hard_idx)
-            basis_original.pop(hard_idx)
-            basis_mutable=self.update_nodes(easy_z1, hard_z2, basis_mutable)
-            print("basis mutable ", basis_mutable)
+            z1_updated=self.order_basis_states_mhs(basis_mutable)[0]
+            z1_idx=basis_mutable.index(z1_updated)
+            z1_original=basis_original[z1_idx]
+            # remaining_basis=deepcopy(basis_mutable)
+            # remaining_basis.remove(z1_updated)
+
+            z2_updated, interaction_ind=self._get_partner_node(z1_updated, basis_mutable)
+            z2_idx=basis_mutable.index(z2_updated)
+            z2_original=basis_original[z2_idx]
+            path.append([z1_original, z2_original, interaction_ind])
+            basis_mutable.pop(z2_idx)
+            basis_original.pop(z2_idx)
+            # print("interaction index before update: ", interaction_ind)
+            # print("z1 z2 ", z1_updated, z2_updated)
+            basis_mutable=self.update_nodes(z1_updated, z2_updated, basis_mutable, interaction_ind)
+            
+        path=path[::-1] #we worked backwards.
+        for pair in path:
+            graph.add_edge(pair[0], pair[1])
+        graph.graph["start"] = path[0][0]
+        return graph, path
+    
+    @staticmethod
+    def _construct_z2_search(intercation_ind, remaining_basis, z1_diffs, z1_mhs):
+        # print("set output: ", set(remaining_basis[0])-set(z1_mhs))
+        # print("set conditio: ", set([intercation_ind]))
+        # print("set conditio: ",  set(remaining_basis[0])-set(z1_mhs)==set([intercation_ind]))
+        new_z1_diffs=[remaining_basis[idx] for idx, elem in enumerate(z1_diffs) if set(elem).intersection(set(z1_mhs))==set([intercation_ind])]
+        return new_z1_diffs
+
+
+    def update_nodes(self, z1, z2, visited, interaction_ind):
+        z1=[int(char) for char in z1]
+        z2=[int(char) for char in z2]
+        diff_inds = list(np.where(np.array(z1) != np.array(z2))[0])
+        # print(diff_inds)
+        diff_inds.remove(interaction_ind)
+        # print("interaction for updating ", interaction_ind)
+        # print("before updating visited ", visited)
+        # print(f"z1 z2 node {z1}, {z2}")
+        # print("diff inds ", diff_inds)
+        visited=[[int(char) for char in st] for st in visited]
+        for target in diff_inds: #update the visited nodes
+            update_visited(visited, interaction_ind, target)
+        # print("right after ", visited)
+        visited=["".join(list(map(str,elem))) for elem in visited]
+        # print("after updating visited ", visited)
+
+        return visited
+
+    @staticmethod
+    def order_by_hamming_dist(origin, remaining_basis):
+        '''Orders the remaining basis by Hamming distance from origin.'''
+        # print("origin ", origin)
+        # print("remaining basis ", remaining_basis)
+        return sorted(remaining_basis, key=lambda elem: (hamming_dist(origin, elem),))
+                    # PathFinderMHSLinear.get_mhs_score(elem, remaining_basis)))
+    
+    @staticmethod
+    def get_mhs_score(elem, remaining_basis):
+        return len(PathFinderMHSLinear.get_mhs(elem, remaining_basis))
+    
+    @staticmethod
+    def get_mhs(elem, remaining_basis):
+        # print("remaining basis ", remaining_basis)
+        # print("origin ", elem)
+        diffs= [[ind for ind in range(len(elem)) if elem[ind] != z1[ind]] for z1 in remaining_basis]
+        # print(f"diffs {diffs}")
+        hitman = Hitman()
+        for inds_set in diffs:
+            hitman.hit(inds_set)
+        # print(hitman.get())
+        return hitman.get()
+    
+    # @staticmethod
+    # def get_all_mhs_scores(basis:list):
+    #     return [PathFinderMHSLinear.get_mhs_score(elem, [elem2 for elem2 in basis if elem2!=elem]) for elem in basis]
+
+    @staticmethod
+    def order_basis_states_mhs(basis:list, z1=None):
+        def _count_elements(basis):
+            return sum([len(block) for block in basis])
+        def _create_remaining_basis(elem, basis):
+            return [elem2 for elem2 in basis if elem2!=elem]
+        def _get_smallest_freq(elem, remaining_basis):
+            diffs=[[ind for ind in indices if elem[ind] != z2[ind]] for z2 in remaining_basis]
+            mhs=PathFinderMHSLinear.get_mhs(elem, remaining_basis)
+            mhs=sorted(mhs, key=lambda idx: sum([1 for block in diffs for elem in block if elem==idx]))
+            return sum([1 for block in diffs for elem in block if elem==mhs[0]])
+
+        orig_basis=deepcopy(basis)
+        indices=range(len(basis[0]))
+        if z1 is not None:
+             return sorted(basis, key=lambda elem:
+                                  (PathFinderMHSLinear.get_mhs_score(elem, _create_remaining_basis(elem, orig_basis)),
+                                hamming_dist(elem, z1)))
+        else:
+            return sorted(basis, key=lambda elem:
+                                    (PathFinderMHSLinear.get_mhs_score(elem, _create_remaining_basis(elem, orig_basis)),
+                    -1*_count_elements([[ind for ind in indices if elem[ind] != z1[ind]] for z1 in _create_remaining_basis(elem, orig_basis)])))
+            # return sorted(basis, key=lambda elem:
+            #                         (PathFinderMHSLinear.get_mhs_score(elem, _create_remaining_basis(elem, orig_basis)),
+            #                         _get_smallest_freq(elem, _create_remaining_basis(elem, basis))))
+    
+    def _get_partner_node(self, z2_updated, basis_mutable):
+        indices=list(range(len(z2_updated)))
+        remaining_basis=deepcopy(basis_mutable)
+        remaining_basis.remove(z2_updated)
+
+        z2_mhs=self.get_mhs(z2_updated, remaining_basis)
+        z2_diffs=[[ind for ind in indices if z2_updated[ind] != z1[ind]] for z1 in remaining_basis]
+        z2_mhs_freq_sorted=sorted(z2_mhs, key=lambda idx: sum([1 for block in z2_diffs for elem in block if elem==idx]))
+        interaction_ind=z2_mhs_freq_sorted[0]
+        z1_search_space=self._construct_z2_search(interaction_ind, remaining_basis, z2_diffs, z2_mhs)
+        if len(z1_search_space)==1:
+            z1_updated=z1_search_space[0]
+        else:
+            # print("z1 search ", z1_search_space)
+            z1_updated=self.order_basis_states_mhs(z1_search_space, z2_updated)[0]
+        return z1_updated, interaction_ind
+
+
+class PathFinderMHSLinear(PathFinderMHSNonlinear):
+    def build_travel_graph(self, states: list[str]) -> Graph:
+        # print(states)
+        # print(ordered_states)
+        graph = Graph()
+        path=[]
+        path_mutable=[]
+        basis_original=deepcopy(states)
+        basis_mutable=deepcopy(states)
+        indices=list(range(len(basis_original[0])))
+        for _ in range(len(states)-1):
+            # print("ordered states easiest firs ", self.order_basis_states_mhs(basis_mutable))
+            if not path_mutable:
+                # z2_updated=self.order_basis_states_mhs(basis_mutable)[0]
+                # z2_idx=basis_mutable.index(z2_updated)
+                # z2_original=basis_original[z2_idx]
+                # z1_updated, interaction_ind=self._get_partner_node(z2_updated, basis_mutable)
+                # z1_idx=basis_mutable.index(z1_updated)
+                # z1_original=basis_original[z1_idx]
+
+                z1_updated=self.order_basis_states_mhs(basis_mutable)[0]
+                z1_idx=basis_mutable.index(z1_updated)
+                z1_original=basis_original[z1_idx]
+                z2_updated, interaction_ind=self._get_partner_node(z1_updated, basis_mutable)
+                z2_idx=basis_mutable.index(z2_updated)
+                z2_original=basis_original[z2_idx]
+
+            else:
+                z2_updated=path_mutable[-1][0]
+                z2_idx=basis_mutable.index(z2_updated)
+                z2_original=basis_original[z2_idx]
+                z1_updated, interaction_ind=self._get_partner_node(z2_updated, basis_mutable)
+                z1_idx=basis_mutable.index(z1_updated)
+                z1_original=basis_original[z1_idx]
+            path.append([z1_original, z2_original, interaction_ind])
+            # print("interaction index before update: ", interaction_ind)
+            # print("z1 z2 ", z1_updated, z2_updated)
+            basis_mutable=self.update_nodes(z1_updated, z2_updated, basis_mutable, interaction_ind)
+            path_mutable.append([basis_mutable[z1_idx], basis_mutable[z2_idx], interaction_ind])
+            basis_mutable.pop(z2_idx)
+            basis_original.pop(z2_idx)
+            
+
         # for i in range(len(ordered_states) - 1):
         #     graph.add_edge(ordered_states[i], ordered_states[i + 1])
         # graph.graph["start"] = ordered_states[0]
@@ -464,85 +650,6 @@ class PathFinderMHSLinear(PathFinder):
             graph.add_edge(pair[0], pair[1])
         graph.graph["start"] = path[0][0]
         return graph, path
-
-    def update_nodes(self, z1, z2, visited):
-        def _get_good_interaction_idx(diffs, visited_transformed, origin_ind, interaction_ind):
-            visited_transformed=deepcopy(visited_transformed)
-            diffs=deepcopy(diffs)
-            diffs.remove(interaction_ind)
-            for ind in diffs:
-                update_visited(visited_transformed, interaction_ind, ind)
-            print("visited transformed ", visited_transformed)
-            print("origin index ", origin_ind)
-            print("interaction index ", interaction_ind)
-            return len(find_min_control_set(visited_transformed, origin_ind, interaction_ind))
-
-        def get_good_interaction_idx(diffs, visited_transformed, origin_ind, destination):
-            # print("z1 idx ", origin_ind)
-            def counter_func(idx, diffs_origin_rest): 
-                # print("idx ", idx)
-                # print("diffs ", diffs_origin_rest)
-                return sum([block.count(idx) for block in diffs_origin_rest])
-            # def _create_remaining_basis(elem, basis):
-            origin_node=visited_transformed[origin_ind]
-            remaining_basis=deepcopy(visited_transformed)
-            remaining_basis.pop(origin_ind)
-            diffs_origin_rest =[[ind for ind in range(len(origin_node)) if origin_node[ind] != z1[ind]] for z1 in remaining_basis]
-            # print("diffs ", diffs)
-            # print("diffs origin rest ", diffs_origin_rest)
-            for idx in diffs:
-                print(counter_func(idx, diffs_origin_rest))
-            sorted_diffs=sorted(diffs, key=
-                                lambda temp_interaction_idx: (
-                                _get_good_interaction_idx(diffs, visited_transformed, origin_ind, temp_interaction_idx),
-                                counter_func(temp_interaction_idx, diffs_origin_rest)))
-            # print("sorted z1 z2 diffs, ", sorted_diffs)
-            return sorted_diffs[0]
-        
-        diff_inds = list(np.where(np.array(z1) != np.array(z2))[0])
-        z1_index=visited.index(z1)
-        interaction_ind=get_good_interaction_idx(diff_inds, visited, z1_index, z2)
-        diff_inds.remove(interaction_ind)
-        for target in diff_inds: #update the visited nodes
-            update_visited(visited, interaction_ind, target)
-        return visited
-
-    @staticmethod
-    def order_by_hamming_dist(origin, remaining_basis):
-        '''Orders the remaining basis by Hamming distance from origin.'''
-        print("origin ", origin)
-        print("remaining basis ", remaining_basis)
-        return sorted(remaining_basis, key=lambda elem: (hamming_dist(origin, elem),))
-                    # PathFinderMHSLinear.get_mhs_score(elem, remaining_basis)))
-    
-    @staticmethod
-    def get_mhs_score(elem, remaining_basis):
-        print("remaining basis ", remaining_basis)
-        print("origin ", elem)
-        diffs= [[ind for ind in range(len(elem)) if elem[ind] != z1[ind]] for z1 in remaining_basis]
-        print(f"diffs {diffs}")
-        hitman = Hitman()
-        for inds_set in diffs:
-            hitman.hit(inds_set)
-        print(hitman.get())
-        return len(hitman.get())
-    
-    @staticmethod
-    def get_all_mhs_scores(basis:list):
-        return [PathFinderMHSLinear.get_mhs_score(elem, [elem2 for elem2 in basis if elem2!=elem]) for elem in basis]
-
-    @staticmethod
-    def order_basis_states_mhs(basis:list):
-        def _count_elements(basis):
-            return sum([len(block) for block in basis])
-        def _create_remaining_basis(elem, basis):
-            return [elem2 for elem2 in basis if elem2!=elem]
-        orig_basis=deepcopy(basis)
-        indices=range(len(basis[0]))
-        return sorted(basis, key=lambda elem:
-                                  (PathFinderMHSLinear.get_mhs_score(elem, _create_remaining_basis(elem, orig_basis)),
-                -1*_count_elements([[ind for ind in indices if elem[ind] != z1[ind]] for z1 in _create_remaining_basis(elem, orig_basis)])))
-
 
 @dataclass
 class GleinigPathFinder(PathFinder):
@@ -603,7 +710,7 @@ class GleinigWalk():
             path.append([bitstr1, bitstr2])
             # if len(self.state_dict.keys())==1:
             #     path.append(bitstr2)
-        print(path[::-1])
+        # print(path[::-1])
         return path[::-1]
     
     def get_gleinig_path_pframes(self):
@@ -909,42 +1016,18 @@ class GleinigWalk():
         return bit_string_set
     
 
-@dataclass
-class BinaryTreePathFinder(PathFinder):
-    """Returns the Minimum Spanning Tree on the basis states. """
-    def build_travel_graph(self, states: list[str]) -> Graph:
-        # print("initial states: ", states)
-        tree=get_binary_tree(states)
-        # leaves=tree.leaves()
-        # print("leaves: ", tree.leaves())
-        bases=get_heavy_side_bases(tree)
-        # bases=[node.value["bit_strs"][0] for node in bases]
-        bases=[node.value["bit_strs"][0] for node in bases]
-        # print("bases: ", bases)
-        graph = Graph()
-        for i in range(len(bases) - 1):
-            graph.add_edge(bases[i], bases[i + 1])
-        graph.graph["start"] = bases[0]
-        # bases=[list(reversed(pair)) for pair in bases]
-        # for pair in bases:
-        #     graph.add_edge(pair[0], pair[1])
-        # graph.graph["start"] = bases[0][0]
-        return graph
-    
 # @dataclass
-# class BruteForce(PathFinder):
+# class BinaryTreePathFinder(PathFinder):
 #     """Returns the Minimum Spanning Tree on the basis states. """
 #     def build_travel_graph(self, states: list[str]) -> Graph:
-#         num_amplitudes_all=len(states)
-#         all_permutations = list(permutations(range(num_amplitudes_all), num_amplitudes_all))
-#         results = []
-#         for perm in all_permutations:
-#             path_finder = PathFinderLinear(list(perm))
-#             cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
-#             results.append(cx_count)
+#         # print("initial states: ", states)
 #         tree=get_binary_tree(states)
+#         # leaves=tree.leaves()
+#         # print("leaves: ", tree.leaves())
 #         bases=get_heavy_side_bases(tree)
-#         print(bases)
+#         # bases=[node.value["bit_strs"][0] for node in bases]
+#         bases=[node.value["bit_strs"][0] for node in bases]
+#         # print("bases: ", bases)
 #         graph = Graph()
 #         for i in range(len(bases) - 1):
 #             graph.add_edge(bases[i], bases[i + 1])
@@ -955,348 +1038,372 @@ class BinaryTreePathFinder(PathFinder):
 #         # graph.graph["start"] = bases[0][0]
 #         return graph
     
-class Node():
-    def __init__(self, value, left=None, right=None, parent=None):
-        self.value=value
-        self.left=left
-        self.right=right
-        self.parent=parent
-        self.visited=False
+# # @dataclass
+# # class BruteForce(PathFinder):
+# #     """Returns the Minimum Spanning Tree on the basis states. """
+# #     def build_travel_graph(self, states: list[str]) -> Graph:
+# #         num_amplitudes_all=len(states)
+# #         all_permutations = list(permutations(range(num_amplitudes_all), num_amplitudes_all))
+# #         results = []
+# #         for perm in all_permutations:
+# #             path_finder = PathFinderLinear(list(perm))
+# #             cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
+# #             results.append(cx_count)
+# #         tree=get_binary_tree(states)
+# #         bases=get_heavy_side_bases(tree)
+# #         print(bases)
+# #         graph = Graph()
+# #         for i in range(len(bases) - 1):
+# #             graph.add_edge(bases[i], bases[i + 1])
+# #         graph.graph["start"] = bases[0]
+# #         # bases=[list(reversed(pair)) for pair in bases]
+# #         # for pair in bases:
+# #         #     graph.add_edge(pair[0], pair[1])
+# #         # graph.graph["start"] = bases[0][0]
+# #         return graph
+    
+# class Node():
+#     def __init__(self, value, left=None, right=None, parent=None):
+#         self.value=value
+#         self.left=left
+#         self.right=right
+#         self.parent=parent
+#         self.visited=False
 
-    def levels(self):
-        """Return the nodes in the binary tree level by level.
+#     def levels(self):
+#         """Return the nodes in the binary tree level by level.
 
-        :return: Lists of nodes level by level.
-        :rtype: [[binarytree.Node]]
+#         :return: Lists of nodes level by level.
+#         :rtype: [[binarytree.Node]]
 
-        **Example**:
+#         **Example**:
 
-        .. doctest::
+#         .. doctest::
 
-            >>> from binarytree import Node
-            >>>
-            >>> root = Node(1)
-            >>> root.left = Node(2)
-            >>> root.right = Node(3)
-            >>> root.left.right = Node(4)
-            >>>
-            >>> print(root)
-            <BLANKLINE>
-              __1
-             /   \\
-            2     3
-             \\
-              4
-            <BLANKLINE>
-            >>>
-            >>> root.levels
-            [[Node(1)], [Node(2), Node(3)], [Node(4)]]
-        """
-        current_nodes = [self]
-        levels = []
+#             >>> from binarytree import Node
+#             >>>
+#             >>> root = Node(1)
+#             >>> root.left = Node(2)
+#             >>> root.right = Node(3)
+#             >>> root.left.right = Node(4)
+#             >>>
+#             >>> print(root)
+#             <BLANKLINE>
+#               __1
+#              /   \\
+#             2     3
+#              \\
+#               4
+#             <BLANKLINE>
+#             >>>
+#             >>> root.levels
+#             [[Node(1)], [Node(2), Node(3)], [Node(4)]]
+#         """
+#         current_nodes = [self]
+#         levels = []
 
-        while len(current_nodes) > 0:
-            next_nodes = []
+#         while len(current_nodes) > 0:
+#             next_nodes = []
 
-            for node in current_nodes:
-                if node.left is not None:
-                    next_nodes.append(node.left)
-                if node.right is not None:
-                    next_nodes.append(node.right)
+#             for node in current_nodes:
+#                 if node.left is not None:
+#                     next_nodes.append(node.left)
+#                 if node.right is not None:
+#                     next_nodes.append(node.right)
 
-            levels.append(current_nodes)
-            current_nodes = next_nodes
+#             levels.append(current_nodes)
+#             current_nodes = next_nodes
 
-        return levels
+#         return levels
 
-    def leaves(self):
-        """Return the leaf nodes of the binary tree.
+#     def leaves(self):
+#         """Return the leaf nodes of the binary tree.
 
-        A leaf node is any node that does not have child nodes.
+#         A leaf node is any node that does not have child nodes.
 
-        :return: List of leaf nodes.
-        :rtype: [binarytree.Node]
+#         :return: List of leaf nodes.
+#         :rtype: [binarytree.Node]
 
-        **Example**:
+#         **Example**:
 
-        .. doctest::
+#         .. doctest::
 
-            >>> from binarytree import Node
-            >>>
-            >>> root = Node(1)
-            >>> root.left = Node(2)
-            >>> root.right = Node(3)
-            >>> root.left.right = Node(4)
-            >>>
-            >>> print(root)
-            <BLANKLINE>
-              __1
-             /   \\
-            2     3
-             \\
-              4
-            <BLANKLINE>
-            >>> root.leaves
-            [Node(3), Node(4)]
-        """
-        current_nodes = [self]
-        leaves = []
+#             >>> from binarytree import Node
+#             >>>
+#             >>> root = Node(1)
+#             >>> root.left = Node(2)
+#             >>> root.right = Node(3)
+#             >>> root.left.right = Node(4)
+#             >>>
+#             >>> print(root)
+#             <BLANKLINE>
+#               __1
+#              /   \\
+#             2     3
+#              \\
+#               4
+#             <BLANKLINE>
+#             >>> root.leaves
+#             [Node(3), Node(4)]
+#         """
+#         current_nodes = [self]
+#         leaves = []
 
-        while len(current_nodes) > 0:
-            next_nodes = []
-            for node in current_nodes:
-                if node.left is None and node.right is None:
-                    leaves.append(node)
-                    continue
-                if node.left is not None:
-                    next_nodes.append(node.left)
-                if node.right is not None:
-                    next_nodes.append(node.right)
-            current_nodes = next_nodes
-        return leaves
-
-
-def get_binary_tree(bit_strs):
-    root=Node({"bit_strs": bit_strs, "dif_qubits": [], "parent": None})
-    num_bit_strs=len(bit_strs)
-    while len(root.leaves())< num_bit_strs:
-        # print()
-        # print("current leaves: ")
-        leaves=root.leaves()
-        for leaf in leaves:
-            leaf_params=leaf.value
-            # print(leaf_params)
-            leaf_dif_qubits=leaf_params["dif_qubits"]
-            leaf_bit_strs=leaf_params["bit_strs"]
-            if len(leaf_bit_strs)>1:
-                new_bit, left_bit_strs, right_bit_strs = maximizing_difference_bit_search(leaf_bit_strs, leaf_dif_qubits)
-                # print("output: ")
-                # print(new_bit)
-                # print(left_bit_strs)
-                # print(right_bit_strs)
-                leaf_dif_qubits.append(new_bit)
-                if len(left_bit_strs) > len(right_bit_strs):
-                    leaf.value["direction"]="left"
-                else:
-                    leaf.value["direction"]="right"
-                leaf.left=Node({"dif_qubits": copy(leaf_dif_qubits), "bit_strs": left_bit_strs}, parent=leaf)
-                leaf.right=Node({"dif_qubits": copy(leaf_dif_qubits), "bit_strs": right_bit_strs},parent=leaf)
-    # print(root.leaves())
-    # levels=root.levels()
-    # leaves=[node.value["bit_strs"][0] for lev in levels for node in lev if is_leaf(node)] #shallowest leafs first.
-
-    return root
+#         while len(current_nodes) > 0:
+#             next_nodes = []
+#             for node in current_nodes:
+#                 if node.left is None and node.right is None:
+#                     leaves.append(node)
+#                     continue
+#                 if node.left is not None:
+#                     next_nodes.append(node.left)
+#                 if node.right is not None:
+#                     next_nodes.append(node.right)
+#             current_nodes = next_nodes
+#         return leaves
 
 
+# def get_binary_tree(bit_strs):
+#     root=Node({"bit_strs": bit_strs, "dif_qubits": [], "parent": None})
+#     num_bit_strs=len(bit_strs)
+#     while len(root.leaves())< num_bit_strs:
+#         # print()
+#         # print("current leaves: ")
+#         leaves=root.leaves()
+#         for leaf in leaves:
+#             leaf_params=leaf.value
+#             # print(leaf_params)
+#             leaf_dif_qubits=leaf_params["dif_qubits"]
+#             leaf_bit_strs=leaf_params["bit_strs"]
+#             if len(leaf_bit_strs)>1:
+#                 new_bit, left_bit_strs, right_bit_strs = maximizing_difference_bit_search(leaf_bit_strs, leaf_dif_qubits)
+#                 # print("output: ")
+#                 # print(new_bit)
+#                 # print(left_bit_strs)
+#                 # print(right_bit_strs)
+#                 leaf_dif_qubits.append(new_bit)
+#                 if len(left_bit_strs) > len(right_bit_strs):
+#                     leaf.value["direction"]="left"
+#                 else:
+#                     leaf.value["direction"]="right"
+#                 leaf.left=Node({"dif_qubits": copy(leaf_dif_qubits), "bit_strs": left_bit_strs}, parent=leaf)
+#                 leaf.right=Node({"dif_qubits": copy(leaf_dif_qubits), "bit_strs": right_bit_strs},parent=leaf)
+#     # print(root.leaves())
+#     # levels=root.levels()
+#     # leaves=[node.value["bit_strs"][0] for lev in levels for node in lev if is_leaf(node)] #shallowest leafs first.
 
-def is_leaf(node):
-    if node.left or node.right:
-        return False
-    else:
-        return True
-
-def maximizing_difference_bit_search(b_strings, dif_qubits):
-        """
-        Splits the set of bit strings into two (t_0 and t_1), by setting
-        t_0 as the set of bit_strings with 0 in the bit_index position, and
-        t_1 as the set of bit_strings with 1 in the bit_index position.
-        Searching for the bit_index not in dif_qubits that maximizes the difference
-        between the size of the nonempty t_0 and t_1.
-        Args:
-        b_string: A list of bit strings eg.: ['000', '011', ...,'101']
-        dif_qubits: A list of previous qubits found to maximize the difference
-        Returns:
-        bit_index: The qubit index that maximizes abs(len(t_0)-len(t_1))
-        t_0: List of binary strings with 0 on the bit_index qubit
-        t_1: List of binary strings with 1 on the bit_index qubit
-        """
-        t_0 = []
-        t_1 = []
-        bit_index = 0
-        set_difference = -1
-        bit_search_space = list(set(range(len(b_strings[0]))) - set(dif_qubits))
-
-        for bit in bit_search_space:
-            temp_t0 = [x for x in b_strings if x[bit] == "0"]
-            temp_t1 = [x for x in b_strings if x[bit] == "1"]
-
-            if temp_t0 and temp_t1:
-                temp_difference = np.abs(len(temp_t0) - len(temp_t1))
-                if temp_difference > set_difference:
-                    t_0 = temp_t0
-                    t_1 = temp_t1
-                    bit_index = bit
-                    set_difference = temp_difference
-
-        return bit_index, t_0, t_1
-
-def get_heavy_side_bases(root, first_iter=True, leafs=None, paths=None):
-    if first_iter:
-        first, paths=get_start_leaf(root)
-        leafs=[first]
-        for node in paths:
-            get_heavy_side_bases(node, False, leafs, None)
-    elif is_leaf(root):
-        leafs.append(root)
-        # return leafs
-    elif not root.visited:
-        local_paths=[]
-        # return leafs
-    # else:
-        root.visited=True
-        # paths.append(root)
-        if root.value["direction"]=="left":
-            local_paths.append(root.left)
-            if root.right:
-                local_paths.append(root.right)
-        else:
-            local_paths.append(root.right)
-            if root.left:
-                local_paths.append(root.left)
-        for node in local_paths:
-            get_heavy_side_bases(node, False, leafs, None)
-    return leafs[::-1]
-
-def get_start_leaf(root, paths=None):
-    if not paths:
-        paths=[]
-    if is_leaf(root):
-        paths.pop()
-        return root, paths[::-1]
-    elif root.value["direction"]=="left":
-        root.visited=True
-        paths.append(root)
-        if root.right:
-            paths.append(root.right)
-        paths.append(root.left)
-        return get_start_leaf(root.left, paths)
-    else:
-        root.visited=True
-        paths.append(root)
-        if root.left:
-            paths.append(root.left)
-        paths.append(root.right)
-        return get_start_leaf(root.right, paths)
+#     return root
 
 
-def get_initial_node(root):
-    root_params=root.value
-    direction=root_params.get("direction")
-    if direction:
-        if direction=="left":
-            return get_initial_node(root.left)
-        else:
-            return get_initial_node(root.right)
-    else:
-        return root
+
+# def is_leaf(node):
+#     if node.left or node.right:
+#         return False
+#     else:
+#         return True
+
+# def maximizing_difference_bit_search(b_strings, dif_qubits):
+#         """
+#         Splits the set of bit strings into two (t_0 and t_1), by setting
+#         t_0 as the set of bit_strings with 0 in the bit_index position, and
+#         t_1 as the set of bit_strings with 1 in the bit_index position.
+#         Searching for the bit_index not in dif_qubits that maximizes the difference
+#         between the size of the nonempty t_0 and t_1.
+#         Args:
+#         b_string: A list of bit strings eg.: ['000', '011', ...,'101']
+#         dif_qubits: A list of previous qubits found to maximize the difference
+#         Returns:
+#         bit_index: The qubit index that maximizes abs(len(t_0)-len(t_1))
+#         t_0: List of binary strings with 0 on the bit_index qubit
+#         t_1: List of binary strings with 1 on the bit_index qubit
+#         """
+#         t_0 = []
+#         t_1 = []
+#         bit_index = 0
+#         set_difference = -1
+#         bit_search_space = list(set(range(len(b_strings[0]))) - set(dif_qubits))
+
+#         for bit in bit_search_space:
+#             temp_t0 = [x for x in b_strings if x[bit] == "0"]
+#             temp_t1 = [x for x in b_strings if x[bit] == "1"]
+
+#             if temp_t0 and temp_t1:
+#                 temp_difference = np.abs(len(temp_t0) - len(temp_t1))
+#                 if temp_difference > set_difference:
+#                     t_0 = temp_t0
+#                     t_1 = temp_t1
+#                     bit_index = bit
+#                     set_difference = temp_difference
+
+#         return bit_index, t_0, t_1
+
+# def get_heavy_side_bases(root, first_iter=True, leafs=None, paths=None):
+#     if first_iter:
+#         first, paths=get_start_leaf(root)
+#         leafs=[first]
+#         for node in paths:
+#             get_heavy_side_bases(node, False, leafs, None)
+#     elif is_leaf(root):
+#         leafs.append(root)
+#         # return leafs
+#     elif not root.visited:
+#         local_paths=[]
+#         # return leafs
+#     # else:
+#         root.visited=True
+#         # paths.append(root)
+#         if root.value["direction"]=="left":
+#             local_paths.append(root.left)
+#             if root.right:
+#                 local_paths.append(root.right)
+#         else:
+#             local_paths.append(root.right)
+#             if root.left:
+#                 local_paths.append(root.left)
+#         for node in local_paths:
+#             get_heavy_side_bases(node, False, leafs, None)
+#     return leafs[::-1]
+
+# def get_start_leaf(root, paths=None):
+#     if not paths:
+#         paths=[]
+#     if is_leaf(root):
+#         paths.pop()
+#         return root, paths[::-1]
+#     elif root.value["direction"]=="left":
+#         root.visited=True
+#         paths.append(root)
+#         if root.right:
+#             paths.append(root.right)
+#         paths.append(root.left)
+#         return get_start_leaf(root.left, paths)
+#     else:
+#         root.visited=True
+#         paths.append(root)
+#         if root.left:
+#             paths.append(root.left)
+#         paths.append(root.right)
+#         return get_start_leaf(root.right, paths)
+
+
+# def get_initial_node(root):
+#     root_params=root.value
+#     direction=root_params.get("direction")
+#     if direction:
+#         if direction=="left":
+#             return get_initial_node(root.left)
+#         else:
+#             return get_initial_node(root.right)
+#     else:
+#         return root
     
 
-@dataclass
-class PathFinderHammingWeight(PathFinder):
-    """ Goes through the states in the same order they are listed in. """
-    # order: Sequence[int] = None
+# @dataclass
+# class PathFinderHammingWeight(PathFinder):
+#     """ Goes through the states in the same order they are listed in. """
+#     # order: Sequence[int] = None
 
-    def build_travel_graph(self, bases: list[str]) -> Graph:
-        graph = Graph()
-        # if self.order is not None:
-        # print(bases)
-        bases = self.sort_bases_by_hamming_weight(bases)
-        # print(bases)
-        # print(bases)
-        # print()
-        for i in range(len(bases) - 1):
-            graph.add_edge(bases[i], bases[i + 1])
-        graph.graph["start"] = bases[0]
-        return graph
+#     def build_travel_graph(self, bases: list[str]) -> Graph:
+#         graph = Graph()
+#         # if self.order is not None:
+#         # print(bases)
+#         bases = self.sort_bases_by_hamming_weight(bases)
+#         # print(bases)
+#         # print(bases)
+#         # print()
+#         for i in range(len(bases) - 1):
+#             graph.add_edge(bases[i], bases[i + 1])
+#         graph.graph["start"] = bases[0]
+#         return graph
     
-    # def sort_bases_by_hamming_weight_pframes(self, bases):
-    #     # hamming_weight_dict={k:(self._get_gleinig_qwalk(v) if len(v)>2 else v) for k, v in hamming_weight_dict.items() }
-    #     # print(hamming_weight_dict)
-    #     hamming_weight_dict=self.get_hamming_weight_dict(bases)
-    #     bases=self._get_sorted_bases(hamming_weight_dict, blocks=True)
-    #     bases_original=deepcopy(bases)
-    #     first=bases[0][0]
-    #     path=[first]
-    #     idx1=bases.index(first)
-    #     bases.pop(idx1)
-    #     bases_original.pop(idx1)
-    #     if bases:
+#     # def sort_bases_by_hamming_weight_pframes(self, bases):
+#     #     # hamming_weight_dict={k:(self._get_gleinig_qwalk(v) if len(v)>2 else v) for k, v in hamming_weight_dict.items() }
+#     #     # print(hamming_weight_dict)
+#     #     hamming_weight_dict=self.get_hamming_weight_dict(bases)
+#     #     bases=self._get_sorted_bases(hamming_weight_dict, blocks=True)
+#     #     bases_original=deepcopy(bases)
+#     #     first=bases[0][0]
+#     #     path=[first]
+#     #     idx1=bases.index(first)
+#     #     bases.pop(idx1)
+#     #     bases_original.pop(idx1)
+#     #     if bases:
             
 
-    #     while(len(bases)>1):
-    #         # path.append([bitstr1, bitstr2])
-    #         temp_basis_sts=[[int(char) for char in elem] for elem in bases]
-    #         diff_inds = np.where(np.array(path[-1]) != np.array(path[-2]))[0]
-    #         for ind in diff_inds[1::]:
-    #             update_visited(temp_basis_sts, diff_inds[0], ind)
-    #         temp_basis_sts=[[str(char) for char in elem] for elem in temp_basis_sts]
-    #         bases=["".join(elem) for elem in temp_basis_sts]
+#     #     while(len(bases)>1):
+#     #         # path.append([bitstr1, bitstr2])
+#     #         temp_basis_sts=[[int(char) for char in elem] for elem in bases]
+#     #         diff_inds = np.where(np.array(path[-1]) != np.array(path[-2]))[0]
+#     #         for ind in diff_inds[1::]:
+#     #             update_visited(temp_basis_sts, diff_inds[0], ind)
+#     #         temp_basis_sts=[[str(char) for char in elem] for elem in temp_basis_sts]
+#     #         bases=["".join(elem) for elem in temp_basis_sts]
+#     #     assert len(sorted_bases)==len(bases), "lengths of sorted bases and bases should match"
+#     #     # print(sorted_bases)
+#     #     return sorted_bases
+    
+    # def get_hamming_weight_dict(self, bases):
+    #     hamming_weight_dict={}
+    #     for elem in bases:
+    #         # print(elem)
+    #         elem_weight=get_hamming_weight(elem)
+    #         hw_list=hamming_weight_dict.get(elem_weight, [])
+    #         if not hw_list:
+    #             hamming_weight_dict[elem_weight]=[elem]
+    #         else:
+    #             hw_list.append(elem)
+    #     # print(hamming_weight_dict)
+    #     hamming_weight_dict={k:(sorted(v, key=lambda x: int(x, 2)) if len(v)>=2 else v) for k, v in hamming_weight_dict.items() }
+    #     return hamming_weight_dict
+    
+    # def sort_bases_by_hamming_weight(self, bases):
+    #     # hamming_weight_dict={}
+    #     # for elem in bases:
+    #     #     # print(elem)
+    #     #     elem_weight=get_hamming_weight(elem)
+    #     #     hw_list=hamming_weight_dict.get(elem_weight, [])
+    #     #     # if not hw_list:
+    #     #     # else:
+    #     #     hw_list.append(elem)
+    #     #     hamming_weight_dict[elem_weight]=hw_list
+
+    #     # # print(hamming_weight_dict)
+    #     # hamming_weight_dict={k:(sorted(v, key=lambda x: int(x, 2))) for k, v in hamming_weight_dict.items() }
+    #     # # hamming_weight_dict={k:(self._get_gleinig_qwalk(v) if len(v)>2 else v) for k, v in hamming_weight_dict.items() }
+    #     # # print(hamming_weight_dict)
+
+    #     # sorted_bases=self._get_sorted_bases(hamming_weight_dict, False)
+    #     sorted_bases=sorted(bases, key= lambda x: (get_hamming_weight(x), int(x, 2)))
     #     assert len(sorted_bases)==len(bases), "lengths of sorted bases and bases should match"
     #     # print(sorted_bases)
     #     return sorted_bases
     
-    def get_hamming_weight_dict(self, bases):
-        hamming_weight_dict={}
-        for elem in bases:
-            # print(elem)
-            elem_weight=get_hamming_weight(elem)
-            hw_list=hamming_weight_dict.get(elem_weight, [])
-            if not hw_list:
-                hamming_weight_dict[elem_weight]=[elem]
-            else:
-                hw_list.append(elem)
-        # print(hamming_weight_dict)
-        hamming_weight_dict={k:(sorted(v, key=lambda x: int(x, 2)) if len(v)>=2 else v) for k, v in hamming_weight_dict.items() }
-        return hamming_weight_dict
+    # def _get_gleinig_qwalk(self, states):
+    #     val=1/np.sqrt(len(states))
+    #     state_dict={k: val for k in states}
+    #     walker=GleinigWalk(state_dict)
+    #     walks=walker.get_gleinig_path()
+    #     bases=list(reversed(walks))
+    #     return bases
     
-    def sort_bases_by_hamming_weight(self, bases):
-        # hamming_weight_dict={}
-        # for elem in bases:
-        #     # print(elem)
-        #     elem_weight=get_hamming_weight(elem)
-        #     hw_list=hamming_weight_dict.get(elem_weight, [])
-        #     # if not hw_list:
-        #     # else:
-        #     hw_list.append(elem)
-        #     hamming_weight_dict[elem_weight]=hw_list
-
-        # # print(hamming_weight_dict)
-        # hamming_weight_dict={k:(sorted(v, key=lambda x: int(x, 2))) for k, v in hamming_weight_dict.items() }
-        # # hamming_weight_dict={k:(self._get_gleinig_qwalk(v) if len(v)>2 else v) for k, v in hamming_weight_dict.items() }
-        # # print(hamming_weight_dict)
-
-        # sorted_bases=self._get_sorted_bases(hamming_weight_dict, False)
-        sorted_bases=sorted(bases, key= lambda x: (get_hamming_weight(x), int(x, 2)))
-        assert len(sorted_bases)==len(bases), "lengths of sorted bases and bases should match"
-        # print(sorted_bases)
-        return sorted_bases
+    # # def _get_gleinig_btree_path(self, states):
+    # #     tree=get_binary_tree(states)
+    # #     # leaves=tree.leaves()
+    # #     # print("leaves: ", tree.leaves())
+    # #     bases=get_heavy_side_bases(tree)
+    # #     # bases=[node.value["bit_strs"][0] for node in bases]
+    # #     bases=[node.value["bit_strs"][0] for node in bases]
+    # #     return bases
     
-    def _get_gleinig_qwalk(self, states):
-        val=1/np.sqrt(len(states))
-        state_dict={k: val for k in states}
-        walker=GleinigWalk(state_dict)
-        walks=walker.get_gleinig_path()
-        bases=list(reversed(walks))
-        return bases
-    
-    def _get_gleinig_btree_path(self, states):
-        tree=get_binary_tree(states)
-        # leaves=tree.leaves()
-        # print("leaves: ", tree.leaves())
-        bases=get_heavy_side_bases(tree)
-        # bases=[node.value["bit_strs"][0] for node in bases]
-        bases=[node.value["bit_strs"][0] for node in bases]
-        return bases
-    
-    def _get_sorted_bases(self, hamming_dict: dict, blocks: bool):
-        hamming_list=[]
-        for k in sorted(hamming_dict.keys()):
-            hamming_list.append(hamming_dict[k])
-        sorted_list=hamming_list
-        if blocks:
-            return hamming_list
-        else:
-            return [elem for block in sorted_list for elem in block]
+    # def _get_sorted_bases(self, hamming_dict: dict, blocks: bool):
+    #     hamming_list=[]
+    #     for k in sorted(hamming_dict.keys()):
+    #         hamming_list.append(hamming_dict[k])
+    #     sorted_list=hamming_list
+    #     if blocks:
+    #         return hamming_list
+    #     else:
+    #         return [elem for block in sorted_list for elem in block]
     
     # def sort_bases_by_hamming_weight(self, bases):
     #     hamming_weight_dict={}
@@ -1403,20 +1510,20 @@ def update_visited(visited: list[list[int]], control: int, target: int):
             label[target] = 1 - label[target]
 
 def find_min_control_set(existing_states: list[list[int]], target_state_ind: int, interaction_ind: int) -> list[int]:
-        """
-        Finds minimum set of control necessary to select the target state.
-        :param existing_states: List of states with non-zero amplitudes.
-        :param target_state_ind: Index of the target state in the existing_states.
-        :param interaction_ind: Index of target qubit for the controlled operation (to exclude from consideration for the control set).
-        :return: Minimum set of control indices necessary to select the target state.
-        """
-        get_diff_inds = lambda state1, state2: [ind for ind in range(len(state1)) if ind != interaction_ind and state1[ind] != state2[ind]]
-        difference_inds = [get_diff_inds(state, existing_states[target_state_ind]) for state_ind, state in enumerate(existing_states) if state_ind != target_state_ind]
-        # print(get_diff_inds)
-        # print("interaction idx ", interaction_ind)
-        # print("difference indices", difference_inds)
-        hitman = Hitman()
-        for inds_set in difference_inds:
-            hitman.hit(inds_set)
-        # print("hitman min set ", hitman.get())
-        return hitman.get()
+    """
+    Finds minimum set of control necessary to select the target state.
+    :param existing_states: List of states with non-zero amplitudes.
+    :param target_state_ind: Index of the target state in the existing_states.
+    :param interaction_ind: Index of target qubit for the controlled operation (to exclude from consideration for the control set).
+    :return: Minimum set of control indices necessary to select the target state.
+    """
+    get_diff_inds = lambda state1, state2: [ind for ind in range(len(state1)) if ind != interaction_ind and state1[ind] != state2[ind]]
+    difference_inds = [get_diff_inds(state, existing_states[target_state_ind]) for state_ind, state in enumerate(existing_states) if state_ind != target_state_ind]
+    # print(get_diff_inds)
+    # print("interaction idx ", interaction_ind)
+    # print("difference indices", difference_inds)
+    hitman = Hitman()
+    for inds_set in difference_inds:
+        hitman.hit(inds_set)
+    # print("hitman min set ", hitman.get())
+    return hitman.get()

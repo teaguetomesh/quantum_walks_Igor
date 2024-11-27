@@ -111,7 +111,7 @@ class MergeInitialize(InitializeSparse):
         # Save the figure to a file
         plt.pyplot.savefig(f"graph_{bases[0]}.png")
         plt.pyplot.clf()
-        quantum_circuit.reverse_ops().draw(output="mpl", fold=-1, filename=f"gleinig_{bases[0]}.jpg")
+        # quantum_circuit.reverse_ops().draw(output="mpl", fold=-1, filename=f"gleinig_{bases[0]}.jpg")
         return quantum_circuit.reverse_ops()
 
     @staticmethod

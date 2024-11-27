@@ -13,18 +13,24 @@ from qiskit.quantum_info import random_statevector, Statevector
 from tqdm import tqdm
 import networkx as nx
 import matplotlib as plt
+from qclib.gates.ldmcu import Ldmcu
+from qiskit.circuit.library import UGate, UnitaryGate
+from qiskit.circuit.library import RZGate, RXGate, PhaseGate
+
+
+
 
 from src.quantum_walks import (PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST, 
-    PathFinderRandom, PathFinderGrayCode, GleinigPathFinder, BinaryTreePathFinder, GleinigWalk,
-    PathFinderHammingWeight, PathFinderFromPairs, GleinigPathFinderPframes,
+    PathFinderRandom, PathFinderGrayCode, GleinigPathFinder, GleinigWalk,
+    PathFinderFromPairs, GleinigPathFinderPframes, PathFinderMHSNonlinear,
     PathFinderMHSLinear
     )
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 from src.walks_gates_conversion import PathConverter
 
 from networkx import Graph
-# from qclib.state_preparation.merge import MergeInitialize
-from src.gleinig import MergeInitialize
+from qclib.state_preparation.merge import MergeInitialize
+# from src.gleinig import MergeInitialize #used for printing out the path
 
 from copy import deepcopy
 
@@ -42,33 +48,34 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
         # print(target_state)
         circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(path, reduce_controls, remove_leading_cx, add_barriers)
         # circuit = PathConverter.convert_path_to_circuit(path, reduce_controls, remove_leading_cx, add_barriers)
-        # print(qiskit.qasm3.dumps(circuit))
         # print(target_state)
-        print(circuit)
-    elif method == "gleinig_qwalk":
+        # print(circuit)
+    elif method == "mhs_walks":
         path = path_finder.get_path_from_pairs(target_state)
         # print(path)
         # add_barriers=True
         circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(path, reduce_controls, remove_leading_cx, add_barriers)
+        # circuit.draw(filename="circoriginal_walks.jpg", output="mpl")
         # print(PathConverter.convert_path_to_circuit_pframes_backwards(path, reduce_controls, remove_leading_cx, add_barriers))
-        print(circuit)
-    elif method=="gleinig":
+    elif method=="merging_states":
         merger=MergeInitialize(target_state)
         circuit=merger._define_initialize()
         # print(circuit)
-    # elif method=="gleinig_qwalk":
-    #     path = path_finder.get_path(target_state)
-    #     circuit = PathConverter.convert_path_to_circuit(path, reduce_controls, remove_leading_cx, add_barriers)
-    # elif method=="binary_tree":
-    #     path = path_finder.get_path(target_state)
-    #     circuit = PathConverter.convert_path_to_circuit(path, reduce_controls, remove_leading_cx, add_barriers)
+        # circuit.draw(fold=-1, filename="circoriginal_mergingsts.jpg", output="mpl")
+
     else:
         raise Exception("Unknown method")
-    # circuit.draw(fold=-1, filename="circoriginal_gleinig.jpg", output="mpl")
     circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
     cx_count = circuit_transpiled.count_ops().get("cx", 0)
+    # if method=="mhs_walks":
+    #     circuit_transpiled.draw(fold=-1, filename="circtranspiled_walks.jpg", output="mpl")
+    # else:
+    #     circuit_transpiled.draw(fold=-1, filename="cirtranspiled_mergingsts.jpg", output="mpl")
+
     # print(circuit_transpiled)
-    print("cx count: ", cx_count)
+    # print("cx count: ", cx_count)
+    # print(circuit.count_ops())
+    # print(circuit_transpiled.count_ops())
     # circuit_transpiled.draw(fold=-1, filename="circtranspiled_gleinig.jpg", output="mpl")
 
     if check_fidelity:
@@ -117,32 +124,21 @@ def merge_state_files():
         pickle.dump(merged, f)
 
 
-def run_prepare_state(init_state, num_qubits_all, file_idxs):
-    # method = "qiskit"
-    method = "gleinig_qwalk"
-    # method = "walks"
-    # method="gleinig"
-    # path_finder = PathFinderRandom()
-    # path_finder = PathFinderLinear()
-    # path_finder = PathFinderGrayCode()
-    # path_finder = PathFinderSHP()
-    # path_finder = GleinigPathFinderPframes()
+def run_prepare_state():
+    # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
+    num_qubits_all=np.array(list(range(5,12)))
+    file_idxs=None#[4,5]
+    num_amplitudes_all=num_qubits_all
     path_finder=PathFinderMHSLinear()
+    # path_finder=PathFinderMHSNonlinear()
+    method="mhs_walks"
+    method="merging_states"
+    # out_col_name="mhs_linear" 
+    out_col_name="merging_states"
+    #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
+    #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
-    # path_finder = GleinigPathFinder()
-    # path_finder = BinaryTreePathFinder()
-    # path_finder=PathFinderHammingWeight()
-    # path_finder = PathFinderMST()
-    # num_qubits_all = np.array([5])
-    # num_qubits_all = np.array(list(range(5, 6)))
-    num_amplitudes_all = num_qubits_all**2 # possible values are [num_qubits_all, num_qubits_all**2, 2**(num_qubits_all-1)]
-    # out_col_name = "qiskit"
-    # out_col_name = "gleinig_qwalk"
-    # out_col_name="gleinig"
-    # out_col_name = "hamming_weight_qwalk"
-    # out_col_name = "shp_back_prop"
-    out_col_name="Min_hit_set_linear"
-    num_workers = 1
+    num_workers = 6
     reduce_controls = True
     check_fidelity = True
     remove_leading_cx = True
@@ -158,7 +154,8 @@ def run_prepare_state(init_state, num_qubits_all, file_idxs):
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
-        state_list=state_list[file_idxs[0]:file_idxs[1]:]
+        if file_idxs:
+            state_list=state_list[file_idxs[0]:file_idxs[1]:]
         results = []
         # state_list=[init_state]
         if num_workers == 1:
@@ -168,12 +165,13 @@ def run_prepare_state(init_state, num_qubits_all, file_idxs):
             with Pool(num_workers) as pool:
                 for result in tqdm(pool.imap(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
                     results.append(result)
+        # print(results)
 
-    # cx_counts_file_path = os.path.join(data_folder, "cx_counts.csv")
-    # df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
-    # df[out_col_name] = results
-    # # # df.to_csv(cx_counts_file_path, index=False)
-    # print(f"Avg CX: {np.mean(df[out_col_name])}\n")
+        cx_counts_file_path = os.path.join(data_folder, "cx_counts.csv")
+        df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
+        df[out_col_name] = results
+        df.to_csv(cx_counts_file_path, index=False)
+        print(f"Avg CX: {np.mean(df[out_col_name])}\n")
 
 # def bruteforce_orders():
 #     method = "walks"
@@ -312,7 +310,7 @@ def prepare_state_brute_star(target_state: dict[str, complex], num_amplitudes: i
             path_finder=PathFinderLinear()
             path_finder.set_graph_attributes_from_pairs(graph, temp_pairs, target_state)
             segments=path_finder.get_path_segments_from_pairs_leafsm(graph, temp_pairs, target_state)
-            print(segments)
+            # print(segments)
             circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(segments, reduce_controls, remove_leading_cx, add_barriers)
             circuit_transpiled = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
             cx_count = circuit_transpiled.count_ops().get("cx", 0)
@@ -359,7 +357,7 @@ def run_greedy_order_state(num_workers = 1):
     out_col_name = "greedy_insertion"
     # out_col_name = "greedy_tree"
     num_qubits_all = np.array(list(range(11, 12)))
-    num_amplitudes_all = num_qubits_all#2**(num_qubits_all-1)
+    num_amplitudes_all = num_qubits_all**2#2**(num_qubits_all-1)
 
     results = []
     for num_qubits, num_amplitudes in zip(num_qubits_all, num_amplitudes_all):
@@ -369,7 +367,7 @@ def run_greedy_order_state(num_workers = 1):
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
-        state_list=state_list[0:1:]
+        state_list=state_list[4:5:]
         results = []
         if num_workers == 1:
             for result in tqdm(map(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
@@ -469,6 +467,9 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
     # print("num amps: ", num_amplitudes)
     basis_sts=list(target_state.keys())
+    _, path= PathFinderMHSLinear().build_travel_graph(list(target_state.keys()))
+    all_sts=[elem for block in path for elem in block]
+    path=list(dict.fromkeys(all_sts))
     # start_idx=basis_sts.index(sorted(basis_sts, key=lambda x: int(x, 2))[0]) #get the smallest Hamming weight element.
     # start_idx=basis_sts.index(GleinigWalk.select_first_string(target_state))
     # path_finder = PathFinderLinear()
@@ -476,7 +477,7 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
     # basis_sts=_prepare_state_greedy_end(basis_sts)
     # basis_sts=list(reversed(GleinigWalk(target_state).get_gleinig_path()))
     # basis_sts=list(reversed(GleinigWalk(target_state).get_gleinig_path()))
-    basis_sts=GleinigWalk(target_state).get_gleinig_path_pframes()
+    # basis_sts=GleinigWalk(target_state).get_gleinig_path_pframes()
     # basis_sts=PathFinderHammingWeight().sort_bases_by_hamming_weight(basis_sts)
 
     #PathFinderHammingWeight().sort_bases_by_hamming_weight(basis_sts)#sorted(basis_sts, key=lambda x: int(x,2))#GleinigWalk(target_state).get_gleinig_path(), 
@@ -506,8 +507,8 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
             path_finder=PathFinderLinear()
             coeff=1/np.sqrt(len(temp_path))
             fake_target={k:coeff for k in temp_path}
-            temp_cx_count= prepare_state(fake_target, method, path_finder, basis_gates, 1, False, 
-                                reduce_controls=reduce_controls, remove_leading_cx=True,
+            temp_cx_count= prepare_state(fake_target, method, path_finder, basis_gates, 0, False, 
+                                reduce_controls=reduce_controls, remove_leading_cx=False,
                                 add_barriers=add_barriers)
             
             # # convert each bit string to list of zeros and ones.
@@ -515,9 +516,13 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
             # origin = [int(char) for char in temp_path[-2]]
             # destination = [int(char) for char in temp_path[-1]]
             # diff_inds = np.where(np.array(destination) != np.array(origin))[0]
-            # interaction_ind = diff_inds[0]
+            # # interaction_ind = diff_inds[0]
             # visited_transformed=deepcopy(visited)
-            # for ind in diff_inds[1::]:
+            # origin_ind=visited_transformed.index(origin)
+            # interaction_ind=PathConverter.get_good_interaction_idx(list(diff_inds), visited_transformed, origin_ind, temp_path[-1])
+            # diffs_iter=deepcopy(list(diff_inds))
+            # diffs_iter.remove(interaction_ind)
+            # for ind in diffs_iter:
             #     PathConverter.update_visited(visited_transformed, interaction_ind, ind)
             # origin_ind=visited.index(origin)
             # temp_cx_count=len(diff_inds[1::])*2
@@ -632,7 +637,7 @@ def prepare_state_greedy_end(target_state: dict[str, complex], num_amplitudes: i
         for idx, z1 in enumerate(basis_sts):
             coeff=1/np.sqrt(len(path)+1)
             temp_target={k:coeff for k in path+[z1]} #construct fake state (normalized of the partial path).
-            print(temp_target)
+            # print(temp_target)
 
             temp_cx_count = prepare_state(temp_target, method, path_finder, basis_gates, optimization_level, False, 
                                     reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
@@ -677,8 +682,8 @@ def prepare_state_greedy_pframe(target_state: dict[str, complex], num_amplitudes
     reduce_controls = True
     check_fidelity = True
     remove_leading_cx = True
-    add_barriers = False
-    optimization_level = 3
+    add_barriers = True
+    optimization_level = 0
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
     # print("num amps: ", num_amplitudes)
     np.random.seed(0)
@@ -762,10 +767,71 @@ if __name__ == "__main__":
     init_state={"010101": amp, "010110": amp, "101000": amp, "100011": amp, "101001": amp, "011110": amp}
 
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
-    qubits=np.array(list(range(6,7)))
-    file_indices=[2,3]
+    num_qubits_all=np.array(list(range(6,7)))
+    file_idxs=[0,1]
+    num_amplitudes_all=num_qubits_all
+
     # run_bruteforce_order_state(1, "linear", qubits, file_indices)
     # run_bruteforce_order_state(1, "star", qubits, file_indices)
-    run_prepare_state(init_state, qubits, file_indices)
+    path_finder=PathFinderMHSLinear()
+    method="mhs_walks"
+    out_col_name="mhs_linear" #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
+    #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
+
+    run_prepare_state()
+    # method="merging_states"
+    # out_col_name=method
+    # run_prepare_state(None, num_qubits_all, file_idxs, num_amplitudes_all, path_finder, out_col_name, method)
+
+
     # run_greedy_order_state(num_workers=1)
     # run_bruteforce_order_state(num_workers=6)
+
+
+    # num_qubits=10
+    # circ1=QuantumCircuit(num_qubits)
+    # rz_angle1=np.pi/3
+    # rx_angle=np.pi/5
+    # rz_angle2=np.pi/4
+    # interaction_ind=0
+    # control_indices=list(range(num_qubits))[1::]
+    # bool_check=False
+    # # gate_definition=np.array([[np.exp(-1j*rz_angle1/2)*np.cos(rx_angle/2),-1j*np.exp(-1j*rz_angle1/2)*np.sin(rx_angle/2)],
+    # #                                         [-1j*np.exp(1j*rz_angle1/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle1/2)*np.cos(rx_angle/2)]])
+
+    # if bool_check==0: #end of circuit    
+    #     gate_definition=np.array([[np.exp(1j*rz_angle1)*np.cos(rx_angle), -1j*np.exp(1j*(rz_angle1+rz_angle2))*np.sin(rx_angle)],
+    #                                         [-1j*np.sin(rx_angle), np.exp(1j*rz_angle2)*np.cos(rx_angle)]])
+    # else:
+    #     gate_definition=np.array([[np.exp(1j*rz_angle2)*np.cos(rx_angle), -1j*np.sin(rx_angle)],
+    #                         [-1j*np.exp(1j*(rz_angle1+rz_angle2))*np.sin(rx_angle), np.exp(1j*rz_angle1)*np.cos(rx_angle)]])
+    # Ldmcu.ldmcu(circ1, gate_definition, control_indices, interaction_ind)
+    # # gate_definition=UnitaryGate(gate_definition).control(len(control_indices))
+    # # circ1.append(gate_definition, control_indices+ [interaction_ind])
+    # # Ldmcu.ldmcu(circ1, gate_definition, control_indices, interaction_ind)
+
+
+    # # rz_gate = RZGate(rz_angle1)
+    # # rz_gate = rz_gate.control(len(control_indices))
+    # # circ1.append(rz_gate, control_indices + [interaction_ind])
+
+    # # # print("rx angle ", rx_angle)
+    # # rx_gate = RXGate(rx_angle)
+    # # rx_gate = rx_gate.control(len(control_indices))
+    # # circ1.append(rx_gate, control_indices + [interaction_ind])
+
+    # circ2=QuantumCircuit(num_qubits)
+    # theta=2*np.pi/5
+    # phi=np.pi/3
+    # lamb=np.pi/4
+    # gate_definition = UGate(theta, phi, lamb, label="U").to_matrix()
+    # Ldmcu.ldmcu(circ2, gate_definition, control_indices[::-1], interaction_ind)
+    # print(circ1)
+    # print(circ2)
+    # basis_gates = ["rx", "ry", "rz", "h", "cx"]
+    # circ1=transpile(circ1.inverse(), basis_gates=basis_gates, optimization_level=3)
+    # circ2=transpile(circ2, basis_gates=basis_gates, optimization_level=3)
+    # # print(circ1)
+    # # print(circ2)
+    # print(circ1.count_ops())
+    # print(circ2.count_ops())
