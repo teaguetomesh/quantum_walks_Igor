@@ -23,7 +23,7 @@ from qiskit.circuit.library import RZGate, RXGate, PhaseGate
 from src.quantum_walks import (PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST, 
     PathFinderRandom, PathFinderGrayCode, GleinigPathFinder, GleinigWalk,
     PathFinderFromPairs, GleinigPathFinderPframes, PathFinderMHSNonlinear,
-    PathFinderMHSLinear
+    PathFinderMHSLinear, hamming_dist
     )
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 from src.walks_gates_conversion import PathConverter
@@ -51,7 +51,7 @@ def prepare_state(target_state: dict[str, complex], method: str, path_finder: Pa
         # print(target_state)
         # print(circuit)
     elif method == "mhs_walks":
-        path = path_finder.get_path_from_pairs(target_state)
+        path = path_finder.get_path_from_pairs_leafsm(target_state)
         # print(path)
         # add_barriers=True
         circuit = PathConverter.convert_path_to_circuit_pframes_backwards_leafsm(path, reduce_controls, remove_leading_cx, add_barriers)
@@ -127,13 +127,17 @@ def merge_state_files():
 def run_prepare_state():
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
     num_qubits_all=np.array(list(range(5,12)))
-    file_idxs=None#[4,5]
+    file_idxs=None
+    # file_idxs=[4,5]
     num_amplitudes_all=num_qubits_all
+    # path_finder=PathFinderLinear()
     path_finder=PathFinderMHSLinear()
     # path_finder=PathFinderMHSNonlinear()
+    # method="walks"
     method="mhs_walks"
     method="merging_states"
     # out_col_name="mhs_linear" 
+    # out_col_name="linear_reduced"
     out_col_name="merging_states"
     #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
@@ -351,23 +355,24 @@ def prepare_state_brute_star(target_state: dict[str, complex], num_amplitudes: i
 
     return np.min(results)
 
-def run_greedy_order_state(num_workers = 1):
+def run_greedy_order_state(num_workers = 1, start_type="mhs"):
     '''Greedy linear.'''
-    # out_col_name = "greedy_linear"
-    out_col_name = "greedy_insertion"
+    if start_type=="mhs":
+        out_col_name = "greedy_insertion_mhs"
+    else:
+        out_col_name = "greedy_insertion_ordered"
     # out_col_name = "greedy_tree"
-    num_qubits_all = np.array(list(range(11, 12)))
-    num_amplitudes_all = num_qubits_all**2#2**(num_qubits_all-1)
+    num_qubits_all = np.array(list(range(5, 12)))
+    num_amplitudes_all = num_qubits_all#2**(num_qubits_all-1)
 
-    results = []
     for num_qubits, num_amplitudes in zip(num_qubits_all, num_amplitudes_all):
-        process_func = partial(prepare_state_greedy_insertion, num_amplitudes=num_amplitudes)
+        process_func = partial(prepare_state_greedy_insertion, start_type=start_type)
         print(f"Num qubits: {num_qubits}; num amplitudes: {num_amplitudes}")
         data_folder = f"data/qubits_{num_qubits}/m_{num_amplitudes}"
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
-        state_list=state_list[4:5:]
+        # state_list=state_list[4:5:]
         results = []
         if num_workers == 1:
             for result in tqdm(map(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
@@ -378,10 +383,21 @@ def run_greedy_order_state(num_workers = 1):
                     results.append(result)
 
         cx_counts_file_path = os.path.join(data_folder, "cx_counts.csv")
-        # df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
-        # df[out_col_name] = results
-        # df.to_csv(cx_counts_file_path, index=False)
-        # print(f"Avg CX: {np.mean(df[out_col_name])}\n")
+        df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
+        df[out_col_name] = results
+        df.to_csv(cx_counts_file_path, index=False)
+        print(f"Avg CX: {np.mean(df[out_col_name])}\n")
+
+def rename_column(old_name, new_name):
+    num_qubits_all = np.array(list(range(5, 12)))
+    num_amplitudes_all = num_qubits_all#2**(num_qubits_all-1)
+
+    for num_qubits, num_amplitudes in zip(num_qubits_all, num_amplitudes_all):
+        data_folder = f"data/qubits_{num_qubits}/m_{num_amplitudes}"
+        cx_counts_file_path = os.path.join(data_folder, "cx_counts.csv")
+        df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
+        df.rename(columns={old_name: new_name}, inplace=True)
+        df.to_csv(cx_counts_file_path, index=False)
 
 def prepare_state_greedy_tree(target_state: dict[str, complex], num_amplitudes: int) -> int:
     '''Uses a greedy method. Add the cheapest basis state at a time.'''
@@ -456,7 +472,7 @@ def prepare_state_greedy_tree(target_state: dict[str, complex], num_amplitudes: 
 
     return cx_count
 
-def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitudes: int) -> int:
+def prepare_state_greedy_insertion(target_state: dict[str, complex], start_type: str) -> int:
     '''Uses a greedy method. Add the cheapest basis state at a time.'''
     method = "walks"
     reduce_controls = True
@@ -467,26 +483,19 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
     # print("num amps: ", num_amplitudes)
     basis_sts=list(target_state.keys())
-    _, path= PathFinderMHSLinear().build_travel_graph(list(target_state.keys()))
-    all_sts=[elem for block in path for elem in block]
+    if start_type=="mhs":
+        _, path_original= PathFinderMHSLinear().build_travel_graph(list(target_state.keys()))
+    else:
+        path_original= deepcopy(basis_sts)
+        sorted(path_original, key=lambda x: int(x, 2))
+
+    all_sts=[elem for block in path_original for elem in block]
     path=list(dict.fromkeys(all_sts))
     # start_idx=basis_sts.index(sorted(basis_sts, key=lambda x: int(x, 2))[0]) #get the smallest Hamming weight element.
     # start_idx=basis_sts.index(GleinigWalk.select_first_string(target_state))
-    # path_finder = PathFinderLinear()
-    # print(basis_sts)
-    # basis_sts=_prepare_state_greedy_end(basis_sts)
-    # basis_sts=list(reversed(GleinigWalk(target_state).get_gleinig_path()))
-    # basis_sts=list(reversed(GleinigWalk(target_state).get_gleinig_path()))
-    # basis_sts=GleinigWalk(target_state).get_gleinig_path_pframes()
-    # basis_sts=PathFinderHammingWeight().sort_bases_by_hamming_weight(basis_sts)
 
-    #PathFinderHammingWeight().sort_bases_by_hamming_weight(basis_sts)#sorted(basis_sts, key=lambda x: int(x,2))#GleinigWalk(target_state).get_gleinig_path(), 
-    # print(basis_sts)
-    # for _ in list(range(2)): # repeat the greedy insertion
-    path=[]
-    path.append(basis_sts[0])
-    # temp_final_cx=None
-    # temp_final_path=None
+    path=[basis_sts[0]]
+
     for z1 in basis_sts[1::]:
         partial_cx=None
         next_basis_idx=None
@@ -504,34 +513,7 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
             temp_path.insert(temp_idx, z1)
             # temp_perm=[basis_sts.index(z1) for z1 in temp_path]
 
-            path_finder=PathFinderLinear()
-            coeff=1/np.sqrt(len(temp_path))
-            fake_target={k:coeff for k in temp_path}
-            temp_cx_count= prepare_state(fake_target, method, path_finder, basis_gates, 0, False, 
-                                reduce_controls=reduce_controls, remove_leading_cx=False,
-                                add_barriers=add_barriers)
-            
-            # # convert each bit string to list of zeros and ones.
-            # visited=[[int(char) for char in elem] for elem in temp_path[0:-1:]]
-            # origin = [int(char) for char in temp_path[-2]]
-            # destination = [int(char) for char in temp_path[-1]]
-            # diff_inds = np.where(np.array(destination) != np.array(origin))[0]
-            # # interaction_ind = diff_inds[0]
-            # visited_transformed=deepcopy(visited)
-            # origin_ind=visited_transformed.index(origin)
-            # interaction_ind=PathConverter.get_good_interaction_idx(list(diff_inds), visited_transformed, origin_ind, temp_path[-1])
-            # diffs_iter=deepcopy(list(diff_inds))
-            # diffs_iter.remove(interaction_ind)
-            # for ind in diffs_iter:
-            #     PathConverter.update_visited(visited_transformed, interaction_ind, ind)
-            # origin_ind=visited.index(origin)
-            # temp_cx_count=len(diff_inds[1::])*2
-            # num_controls= len(PathConverter.find_min_control_set(visited_transformed, origin_ind, interaction_ind))
-            # if num_controls:
-            #     if num_controls % 2==0:
-            #         temp_cx_count+=40*num_controls-84
-            #     else:
-            #         temp_cx_count+=40*num_controls-76
+            temp_cx_count=estimate_cx_count(temp_path)
             
             if not partial_cx:
                 partial_cx=temp_cx_count
@@ -541,29 +523,89 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], num_amplitu
                 next_basis_idx=temp_idx
         # path.append(basis_sts.pop(next_basis_idx))
         path.insert(next_basis_idx, z1)
-    # temp_final_perm=[basis_sts.index(z1) for z1 in path]
-    # temp_path_finder = PathFinderLinear(temp_final_perm)
-    # current_cx=prepare_state(target_state, method, temp_path_finder, basis_gates, optimization_level, check_fidelity, 
-    #                                 reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
-    #                                 add_barriers=add_barriers)
-    # if not temp_final_path:
-    #     temp_final_path=path
-    # elif current_cx<temp_final_cx:
-    #     temp_final_cx=current_cx
-    #     temp_final_path=path
 
-
-    # print(basis_sts)
-    # convert path list of indices. prepare actual state.
     basis_sts=list(target_state.keys())
     perm=[basis_sts.index(z1) for z1 in path]
     # print(perm)
     path_finder = PathFinderLinear(perm)
-    cx_count = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
+    cx_count1 = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
                                     reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
                                     add_barriers=add_barriers)
+    if start_type=="mhs":
+        path_finder = PathFinderMHSLinear()
+        method="mhs_walks"
+    else:
+        method="walks"
+        path_finder = PathFinderLinear([basis_sts.index(elem) for elem in path_original])
+    cx_count2 = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
+                                    reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
+                                    add_barriers=add_barriers)
+    return min([cx_count1, cx_count2])
 
-    return cx_count
+def estimate_cx_count(linear_path):
+    # convert each bit string to list of zeros and ones.
+    # print("starting.....")
+    # print("initial path ", linear_path)
+    def int_list(elem):
+        return [int(char) for char in elem]
+    path_mutable=list(zip(linear_path[:-1:], linear_path[1::]))[::-1]
+    path_mutable=[[int_list(elem) for elem in block] for block in path_mutable]
+    linear_path=linear_path[::-1] #reverse since we will construct the circuit backwards.
+    visited_transformed = [[int(char) for char in st] for st in linear_path]
+    # print("mutable path ", path_mutable)
+    temp_cx_count=0
+    if len(linear_path)<=2:
+        return 0
+    for idx in list(range(len(linear_path)-1)):
+        segment=path_mutable[idx]
+        # print("path mutable ", path_mutable)
+        origin = deepcopy(segment[0])
+        destination = deepcopy(segment[1])
+        diff_inds = list(np.where(np.array(origin) != np.array(destination))[0])
+
+        # print("initial visited: ", visited)
+        # print("destination: ", destination)
+        # print("origin ", origin)
+        visited_transformed=[elem for elem in visited_transformed if elem!=destination]
+        # visited_transformed = deepcopy(visited)
+        # visited_transformed = [elem for elem in visited_transformed if elem!=destination]
+        # print("popped destination transformed: ", visited_transformed)
+        # print("z1 z2 diffs ", diff_inds)
+        # print("visited ", visited)
+        origin_ind=visited_transformed.index(origin)
+        if len(diff_inds)==1:
+            interaction_ind=diff_inds[0]
+        else:
+            interaction_ind=PathConverter.get_good_interaction_idx(diff_inds, visited_transformed, origin_ind, segment[1])
+        # interaction_ind = diff_inds[0]
+        # print("diff inds ", diff_inds)
+        # print("interaction idx ", interaction_ind)
+        diff_inds.remove(interaction_ind)
+
+        # update the set of visited
+        for ind in diff_inds:
+            PathConverter.update_visited(visited_transformed, interaction_ind, ind)
+            # update the mutable path.
+            for idx, segment in enumerate(path_mutable):
+                # print(f"initial {z1} {z2}")
+                PathConverter.update_visited(segment, interaction_ind, ind)
+                # segment=[z1,z2]
+                # path_mutable[idx]=segment
+                # print(f"attached {segment.labels[0]} {segment.labels[1]}")
+
+        # print("updating visited.")
+        temp_cx_count+=len(diff_inds)
+        # origin_ind = visited.index(origin)
+        # print("origin index ", origin_ind)
+        control_indices = PathConverter.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+        # visited=visited_transformed
+            
+        # if num_controls % 2==0:
+        #     temp_cx_count+=20*num_controls-34
+        # else:
+        #     temp_cx_count+=20*num_controls-38
+        temp_cx_count+=20*len(control_indices)-38
+    return temp_cx_count
 
 def _prepare_state_greedy_end(input_basis_sts: list[str]) -> int:
     '''Uses a greedy method. Add the cheapest basis state at a time. Helper function for warm starting
@@ -779,6 +821,8 @@ if __name__ == "__main__":
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
     run_prepare_state()
+    # run_greedy_order_state(num_workers=6, start_type="ordered")
+    # rename_column("greedy_insertion", "greedy_insertion_mhs")
     # method="merging_states"
     # out_col_name=method
     # run_prepare_state(None, num_qubits_all, file_idxs, num_amplitudes_all, path_finder, out_col_name, method)
