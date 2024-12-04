@@ -14,7 +14,7 @@ from src.permutation_circuit_generator import PermutationCircuitGeneratorQiskit,
 from src.permutation_generator import PermutationGeneratorDense
 from src.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathFinderLinear, PathFinderSHP, PathFinderMST, PathFinderRandom, PathFinderGrayCode
-from src.state_circuit_generator import StateCircuitGenerator, StateCircuitGeneratorMultiEdgeDense, StateCircuitGeneratorQiskitDense
+from src.state_circuit_generator import StateCircuitGenerator, StateCircuitGeneratorMultiEdgeDense, StateCircuitGeneratorQiskitDense, MultiEdgeGeneratorSparse
 from src.utilities import make_dict
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 
@@ -29,7 +29,7 @@ def prepare_state(target_state: dict[str, complex], circuit_generator: StateCirc
     if check_fidelity:
         output_state_vector = execute_circuit(circuit_transpiled)
         target_state_vector = get_state_vector(target_state)
-        fidelity = get_fidelity(output_state_vector, target_state_vector)
+        fidelity = get_fidelity(output_state_vector[:len(target_state_vector)], target_state_vector)
         assert abs(1 - fidelity) < fidelity_tol, f"Failed to prepare the state. Fidelity: {fidelity}"
 
     return cx_count
@@ -79,14 +79,15 @@ def run_prepare_state():
 
     # circuit_generator = CircuitGeneratorQiskitDefault()
     # circuit_generator = CircuitGeneratorPath(path_finder=path_finder, reduce_controls=True, remove_leading_cx=True, add_barriers=False)
-    # circuit_generator = StateCircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(),
-    #                                                      permutation_circuit_generator=PermutationCircuitGeneratorSparse())
-    circuit_generator = StateCircuitGeneratorMultiEdgeDense(dense_permutation_generator=PermutationGeneratorDense(),
-                                                            permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    circuit_generator = StateCircuitGeneratorQiskitDense(dense_permutation_generator=PermutationGeneratorDense(),
+                                                         permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    # circuit_generator = StateCircuitGeneratorMultiEdgeDense(dense_permutation_generator=PermutationGeneratorDense(),
+    #                                                         permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    # circuit_generator = MultiEdgeGeneratorSparse()
 
-    num_qubits_all = np.array(list(range(10, 12)))
+    num_qubits_all = np.array(list(range(6, 12)))
     num_amplitudes_all = num_qubits_all
-    out_col_name = "multiedge_dense"
+    out_col_name = "qiskit_dense"
     num_workers = 10
     check_fidelity = True
     optimization_level = 3
@@ -99,6 +100,9 @@ def run_prepare_state():
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
+
+            # # DEBUG
+            # state_list = state_list[4:]
 
         results = []
         if num_workers == 1:

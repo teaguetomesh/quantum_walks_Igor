@@ -2,15 +2,16 @@
 import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from itertools import product
 
+import networkx as nx
 import numpy as np
 from numpy import ndindex, ndarray
-from numpy.random.mtrand import Sequence
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
-from qiskit.pulse import num_qubits
 from qiskit.quantum_info import Statevector
+from networkx.algorithms import matching
 
 from src.permutation_circuit_generator import PermutationCircuitGenerator
 from src.permutation_generator import PermutationGenerator
@@ -171,17 +172,18 @@ class StateCircuitGeneratorDensePermute(StateCircuitGenerator):
         return dense_state
 
     @abstractmethod
-    def get_dense_state_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
+    def get_dense_state_circuit(self, dense_state: list[complex]) -> QuantumCircuit:
         pass
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
         dense_permutation = self.dense_permutation_generator.get_permutation(target_state)
         dense_state = self.map_to_dense_state(target_state, dense_permutation)
-        num_qubits = len(next(iter(target_state)))
-        dense_state_qc = self.get_dense_state_circuit(dense_state, num_qubits)
+        dense_state_qc = self.get_dense_state_circuit(dense_state)
         inverse_permutation = {val: key for key, val in dense_permutation.items()}
         permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(inverse_permutation)
-        overall_qc = dense_state_qc.compose(permutation_qc)
+        overall_qc = QuantumCircuit(permutation_qc.num_qubits)
+        overall_qc.append(dense_state_qc, range(dense_state_qc.num_qubits))
+        overall_qc.append(permutation_qc, range(permutation_qc.num_qubits))
         return overall_qc
 
 
@@ -189,11 +191,11 @@ class StateCircuitGeneratorDensePermute(StateCircuitGenerator):
 class StateCircuitGeneratorQiskitDense(StateCircuitGeneratorDensePermute):
     """ Uses qiskit's built-in state preparation on dense state. """
 
-    def get_dense_state_circuit(self, dense_state: list[complex], num_qubits: int) -> QuantumCircuit:
+    def get_dense_state_circuit(self, dense_state: list[complex]) -> QuantumCircuit:
         """ Returns a quantum circuit that prepares a dense state via qiskit's prepare_state method. """
+        num_qubits = int(np.ceil(np.log2(len(dense_state))))
         qc = QuantumCircuit(num_qubits)
-        num_qubits_dense = int(np.ceil(np.log2(len(dense_state))))
-        qc.prepare_state(dense_state, range(num_qubits_dense))
+        qc.prepare_state(dense_state, range(num_qubits))
         return qc
 
 
@@ -258,3 +260,65 @@ class StateCircuitGeneratorMultiEdgeDense(StateCircuitGeneratorDensePermute):
             controls = np.where(np.array(list(basis_ind_bin)) == '1')[0]
             current_state = self.apply_mcrz(time, controls, qc, current_state)
         return qc
+
+
+class MultiEdgeGeneratorSparse(StateCircuitGenerator):
+    """ Uses sparse state preparation with multi-edge approach. """
+
+    # def get_edge_distance(self, edge1: tuple[str, str | None], edge2: tuple[str, str | None]) -> tuple[int, tuple[str, str]]:
+    #     """ Calculates distance between two edges as minimum Hamming distances between their nodes. Returns distance and node pair achieving it. """
+    #     min_distance = None
+    #     node1 = node2 = None
+    #     for n1, n2 in product(edge1, edge2):
+    #         if n1 is None or n2 is None:
+    #             continue
+    #         distance = sum(n1[k] != n2[k] for k in range(len(n1)))
+    #         if min_distance is None or distance < min_distance:
+    #             min_distance = distance
+    #             node1 = n1
+    #             node2 = n2
+    #     return min_distance, (node1, node2)
+
+    def get_basis_distance(self, basis1: str, basis2: str, rx_dims: list[int] | None) -> int:
+        """ Calculates modified Hamming distance between two bitstrings of equal length. """
+        diff_inds = np.array([basis1[i] != basis2[i] for i in range(len(basis1))])
+        if rx_dims is not None:
+            diff_inds[rx_dims] ^= 1
+        return sum(diff_inds)
+
+    def find_pairs(self, bases: list[str], rx_dims: list[int] | None) -> list[tuple[str, str]]:
+        """ Groups bases in pairs based on their modified Hamming distance. See get_basis_distance for details. """
+        pairwise_distances = np.zeros((len(bases), len(bases)), dtype=int)
+        for i in range(pairwise_distances.shape[0]):
+            for j in range(i + 1, pairwise_distances.shape[1]):
+                pairwise_distances[i, j] = pairwise_distances[j, i] = self.get_basis_distance(bases[i], bases[j], rx_dims)
+        G = nx.from_numpy_array(pairwise_distances)
+        return list(matching.min_weight_matching(G))
+
+    def select_interaction_dims(self, pairs: list[tuple[str, str]]) -> list[int]:
+        """ Selects difference indices that are present in more than half pairs, or the most common difference if no difference is sufficiently common. """
+        diff_inds = np.array([np.array(list(node1)) != np.array(list(node2)) for node1, node2 in pairs])
+        diff_counts = np.sum(diff_inds, 0)
+        if any(diff_counts > len(pairs) // 2):
+            return np.where(diff_counts > len(pairs) // 2)[0].tolist()
+        return [np.argmax(diff_counts)]
+
+    def build_clustering_tree(self, target_bases: list[str]) -> list[list[tuple[str, str]]]:
+        """ Builds a hierarchy of basis clustering that minimizes total hamming distance between clusters.
+         Returns a list where the 0th index corresponds to clustering level, 1st index to edges on that level, and 2nd index to bases in that edge. """
+        num_levels = int(np.ceil(np.log2(len(target_bases))))
+        clustering_tree = []
+        for level in range(num_levels):
+            num_edges = len(target_bases) - 2 ** (num_levels - 1) if level == 0 else 2 ** (num_levels - 1 - level)
+            pairs = self.find_pairs(target_bases, None)
+            interaction_dims = self.select_interaction_dims(pairs)
+            pairs = self.find_pairs(target_bases, interaction_dims)
+            selected_edge_inds = np.array(list(cluster)[:num_edges_last_layer])
+            unselected_edge_inds = [ind for ind in range(len(prev_edges)) if ind not in selected_edge_inds]
+            selected_edges = [distance_edges[*edge] for edge in selected_edge_inds]
+            clustering_tree.append(selected_edges)
+            new_edges = selected_edges + np.array(prev_edges, dtype=object)[unselected_edge_inds].tolist()
+        return clustering_tree
+
+    def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
+        clustering_tree = self.build_clustering_tree(list(target_state))
