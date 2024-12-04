@@ -649,6 +649,7 @@ class PathFinderMHSLinear(PathFinderMHSNonlinear):
             path_mutable.append([basis_mutable[z1_idx], basis_mutable[z2_idx], interaction_ind])
             basis_mutable.pop(z2_idx)
             basis_original.pop(z2_idx)
+            # print(f"pair: {z1_original} {z2_original}")
             
         path=path[::-1] #we worked backwards.
         for pair in path:
@@ -1077,5 +1078,5 @@ if __name__=="__main__":
     amp=1/np.sqrt(6)
     basis=["000001", "000011", "000111", "001111", "011111", "111111"]
     pathf=PathFinderMHSLinear()
-    pathf.get_path_segments_from_pairs_leafsm()
+    print(pathf.build_travel_graph(basis)[1])
     

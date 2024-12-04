@@ -126,19 +126,20 @@ def merge_state_files():
 
 def run_prepare_state():
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
-    num_qubits_all=np.array(list(range(5,12)))
+    num_qubits_all=np.array(list(range(5,9)))
     file_idxs=None
     # file_idxs=[4,5]
-    num_amplitudes_all=num_qubits_all
+    num_amplitudes_all=num_qubits_all**2
     # path_finder=PathFinderLinear()
     path_finder=PathFinderMHSLinear()
     # path_finder=PathFinderMHSNonlinear()
     # method="walks"
     method="mhs_walks"
-    method="merging_states"
-    # out_col_name="mhs_linear" 
+    # method="merging_states"
+    out_col_name="mhs_linear"
+    # out_col_name="mhs_nonlinear" 
     # out_col_name="linear_reduced"
-    out_col_name="merging_states"
+    # out_col_name="merging_states"
     #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
@@ -487,7 +488,7 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], start_type:
         _, path_original= PathFinderMHSLinear().build_travel_graph(list(target_state.keys()))
     else:
         path_original= deepcopy(basis_sts)
-        sorted(path_original, key=lambda x: int(x, 2))
+        path_original= sorted(path_original, key=lambda x: int(x, 2))
 
     all_sts=[elem for block in path_original for elem in block]
     path=list(dict.fromkeys(all_sts))
@@ -531,16 +532,17 @@ def prepare_state_greedy_insertion(target_state: dict[str, complex], start_type:
     cx_count1 = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
                                     reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
                                     add_barriers=add_barriers)
-    if start_type=="mhs":
-        path_finder = PathFinderMHSLinear()
-        method="mhs_walks"
-    else:
-        method="walks"
-        path_finder = PathFinderLinear([basis_sts.index(elem) for elem in path_original])
-    cx_count2 = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
-                                    reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
-                                    add_barriers=add_barriers)
-    return min([cx_count1, cx_count2])
+    # if start_type=="mhs":
+    #     path_finder = PathFinderMHSLinear()
+    #     method="mhs_walks"
+    # else:
+    #     method="walks"
+    #     path_finder = PathFinderLinear([basis_sts.index(elem) for elem in path_original])
+    # cx_count2 = prepare_state(target_state, method, path_finder, basis_gates, optimization_level, check_fidelity, 
+    #                                 reduce_controls=reduce_controls, remove_leading_cx=remove_leading_cx,
+    #                                 add_barriers=add_barriers)
+    # return min([cx_count1, cx_count2])
+    return cx_count1
 
 def estimate_cx_count(linear_path):
     # convert each bit string to list of zeros and ones.
@@ -803,26 +805,26 @@ def prepare_state_greedy_pframe(target_state: dict[str, complex], num_amplitudes
 if __name__ == "__main__":
     # generate_states()
     # merge_state_files()
-    init_state={"1000": 1/2, "0110": 1/2, "1011": 1/2, "0101": 1/2}
-    amp=1/np.sqrt(6)
-    init_state={"101010": amp, "101001": amp, "110101": amp, "011100": amp, "010110": amp, "000011": amp}
-    init_state={"010101": amp, "010110": amp, "101000": amp, "100011": amp, "101001": amp, "011110": amp}
+    # init_state={"1000": 1/2, "0110": 1/2, "1011": 1/2, "0101": 1/2}
+    # amp=1/np.sqrt(6)
+    # init_state={"101010": amp, "101001": amp, "110101": amp, "011100": amp, "010110": amp, "000011": amp}
+    # init_state={"010101": amp, "010110": amp, "101000": amp, "100011": amp, "101001": amp, "011110": amp}
 
-    # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
-    num_qubits_all=np.array(list(range(6,7)))
-    file_idxs=[0,1]
-    num_amplitudes_all=num_qubits_all
+    # # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
+    # num_qubits_all=np.array(list(range(6,7)))
+    # file_idxs=[0,1]
+    # num_amplitudes_all=num_qubits_all
 
     # run_bruteforce_order_state(1, "linear", qubits, file_indices)
     # run_bruteforce_order_state(1, "star", qubits, file_indices)
-    path_finder=PathFinderMHSLinear()
-    method="mhs_walks"
-    out_col_name="mhs_linear" #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
+    # path_finder=PathFinderMHSLinear()
+    # method="mhs_walks"
+    # out_col_name="mhs_linear" #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
-    run_prepare_state()
-    # run_greedy_order_state(num_workers=6, start_type="ordered")
-    # rename_column("greedy_insertion", "greedy_insertion_mhs")
+    # run_prepare_state()
+    run_greedy_order_state(num_workers=6, start_type="mhs")
+    # rename_column("greedy_insertion_mhs", "greedy_insertion_mhs_combined")
     # method="merging_states"
     # out_col_name=method
     # run_prepare_state(None, num_qubits_all, file_idxs, num_amplitudes_all, path_finder, out_col_name, method)
