@@ -65,13 +65,14 @@ def plot_qiskit_comparison():
             num_amplitudes = [densities_all[density_ind](n) for n in num_qubits]
             plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, density_ind, method_ind, "_nolabel_", figure_id)
 
-    circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=5, label="Quantum Walks")
-    star_marker = Line2D([0], [0], linestyle="", color="k", marker="*", markersize=8, label="Qiskit")
-    x_marker = Line2D([0], [0], linestyle="", color="k", marker="X", markersize=5, label="Qiskit Dense")
+    circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=10, label="Quantum Walks")
+    star_marker = Line2D([0], [0], linestyle="", color="k", marker="*", markersize=10, label="Qiskit")
+    x_marker = Line2D([0], [0], linestyle="", color="k", marker="X", markersize=10, label="Qiskit Dense")
+    triangle_marker = Line2D([0], [0], linestyle="", color="k", marker="v", markersize=10, label="Multi-edge QW")
     blue_line = Line2D([0], [0], color="b", label=r"$m = n$")
     red_line = Line2D([0], [0], color="r", label=r"$m = n^2$")
     green_line = Line2D([0], [0], color="g", label=r"$m = 2^{n-1}$")
-    plt.legend(handles=[circle_marker, star_marker, x_marker, blue_line, red_line, green_line], draggable=True)
+    plt.legend(handles=[circle_marker, star_marker, x_marker, triangle_marker, blue_line, red_line, green_line], draggable=True)
     save_figure()
 
 

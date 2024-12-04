@@ -2,16 +2,15 @@
 import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from itertools import product
 
 import networkx as nx
 import numpy as np
-from numpy import ndindex, ndarray
+from networkx.algorithms import matching
+from numpy import ndarray
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
-from networkx.algorithms import matching
 
 from src.permutation_circuit_generator import PermutationCircuitGenerator
 from src.permutation_generator import PermutationGenerator
