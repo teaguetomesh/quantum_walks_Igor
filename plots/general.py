@@ -9,8 +9,9 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from numpy import ndarray
 
-colors = [(0, 0, 1), (1, 0, 0), (0, 0.5, 0), (0, 0, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
-colors += distinctipy.get_colors(10, colors + [(1, 1, 1)])
+# colors = [(0, 0, 1), (1, 0, 0), (0, 1, 0), (0, 0, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
+colors = [(0, 0, 1), (1, 0, 0), (0, 1, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
+colors += distinctipy.get_colors(11, colors + [(1, 1, 1)], rng=0)
 markers = 'o*Xvs'
 marker_sizes = {'o': 8, '*': 10, 'X': 7, 'v': 5, 's': 5, 'none': 0}
 styles = ['-', '--']
@@ -95,7 +96,7 @@ def plot_general(lines: list[Line], all_std_devs: list[np.array], axis_labels: t
     plt.rcParams.update({'font.size': font_size})
 
     for line, std_dev in zip(lines, all_std_devs):
-        plt.errorbar(line.xs, line.ys, yerr=std_dev, color=line.color, marker=line.marker, linestyle=line.style, 
+        plt.errorbar(line.xs, line.ys, yerr=[1.96*elem/np.sqrt(1000) for elem in std_dev], color=line.color, marker=line.marker, linestyle=line.style, 
                      markersize=marker_sizes[line.marker], label=line.label, capsize=7.0) #capsize is the size of error bar caps
         handles, labels=plt.gca().get_legend_handles_labels()
         handles=[h[0] for h in handles] #strips the error bars from the legend.

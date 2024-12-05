@@ -126,25 +126,35 @@ def merge_state_files():
 
 def run_prepare_state():
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
-    num_qubits_all=np.array(list(range(5,9)))
+    num_qubits_all=np.array(list(range(5,12)))
     file_idxs=None
     # file_idxs=[4,5]
-    num_amplitudes_all=num_qubits_all**2
-    # path_finder=PathFinderLinear()
-    path_finder=PathFinderMHSLinear()
+    num_amplitudes_all=num_qubits_all
+    path_finder=PathFinderLinear()
+    # path_finder=PathFinderMHSLinear()
     # path_finder=PathFinderMHSNonlinear()
-    # method="walks"
-    method="mhs_walks"
+    # path_finder=PathFinderSHP()
+    # path_finder=PathFinderMST()
+    # path_finder=PathFinderRandom()
+    method="walks"
+    # method="qiskit"
+    # method="mhs_walks"
     # method="merging_states"
-    out_col_name="mhs_linear"
+    # out_col_name="mhs_linear"
+    # out_col_name="shp_reduced"
+    # out_col_name="mst_reduced"
+    # out_col_name="random_reduced"
+    out_col_name="random"
+    # out_col_name="qiskit"
     # out_col_name="mhs_nonlinear" 
+    # out_col_name="mhs_nonlinear_not_reduced" 
     # out_col_name="linear_reduced"
     # out_col_name="merging_states"
     #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
     num_workers = 6
-    reduce_controls = True
+    reduce_controls = False
     check_fidelity = True
     remove_leading_cx = True
     add_barriers = False
@@ -822,8 +832,8 @@ if __name__ == "__main__":
     # out_col_name="mhs_linear" #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
-    # run_prepare_state()
-    run_greedy_order_state(num_workers=6, start_type="mhs")
+    run_prepare_state()
+    # run_greedy_order_state(num_workers=6, start_type="mhs")
     # rename_column("greedy_insertion_mhs", "greedy_insertion_mhs_combined")
     # method="merging_states"
     # out_col_name=method

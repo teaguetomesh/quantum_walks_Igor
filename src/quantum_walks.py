@@ -496,8 +496,9 @@ class PathFinderMHSNonlinear(PathFinder):
     
     @staticmethod
     def _construct_z2_search(intercation_ind, remaining_basis, z1_diffs, z1_mhs):
-        new_z1_diffs=[remaining_basis[idx] for idx, elem in enumerate(z1_diffs) if set(elem).intersection(set(z1_mhs))==set([intercation_ind])]
-        return new_z1_diffs
+        '''Filters remaing_basis such that z1_diffs[i] intersects z1_mhs[i] only at interaction_ind.'''
+        new_reamining_basis=[remaining_basis[idx] for idx, elem in enumerate(z1_diffs) if set(elem).intersection(set(z1_mhs))==set([intercation_ind])]
+        return new_reamining_basis
 
 
     def update_nodes(self, z1, z2, visited, interaction_ind):

@@ -553,179 +553,179 @@ class PathConverter:
 
         return qc
     
-    @staticmethod
-    def convert_path_to_circuit_pframes_backwards(path: list[PathSegment], reduce_controls: bool = True, remove_leading_cx: bool = True, add_barriers: bool = False) -> QuantumCircuit:
-        """
-        Converts quantum walks to qiskit circuit.
-        :param path: List of path segments, describing the state preparation path.
-        :param reduce_controls: True to search for minimally necessary state of controls. False to use all n-1 controls (for debug purposes).
-        :param remove_leading_cx: True to remove leading CX gates whose controls are never satisfied.
-        :param add_barriers: True to insert barriers between path segments.
-        :return: Implementing circuit.
-        """
-        # circuit for the ending rotations.
-        # print("original ", path)
+    # @staticmethod
+    # def convert_path_to_circuit_pframes_backwards(path: list[PathSegment], reduce_controls: bool = True, remove_leading_cx: bool = True, add_barriers: bool = False) -> QuantumCircuit:
+    #     """
+    #     Converts quantum walks to qiskit circuit.
+    #     :param path: List of path segments, describing the state preparation path.
+    #     :param reduce_controls: True to search for minimally necessary state of controls. False to use all n-1 controls (for debug purposes).
+    #     :param remove_leading_cx: True to remove leading CX gates whose controls are never satisfied.
+    #     :param add_barriers: True to insert barriers between path segments.
+    #     :return: Implementing circuit.
+    #     """
+    #     # circuit for the ending rotations.
+    #     # print("original ", path)
 
-        # visited=[]
-        # for idx, segment in enumerate(path):
-        #     if idx!=0:
-        #         visited.append(segment.labels[1])
-        #     else:
-        #         visited.append(segment.labels[0])
-        #         visited.append(segment.labels[1])
-        # visited=list(dict.fromkeys(visited)) 
-        qc = QuantumCircuit(len(path[0].labels[0]))
+    #     # visited=[]
+    #     # for idx, segment in enumerate(path):
+    #     #     if idx!=0:
+    #     #         visited.append(segment.labels[1])
+    #     #     else:
+    #     #         visited.append(segment.labels[0])
+    #     #         visited.append(segment.labels[1])
+    #     # visited=list(dict.fromkeys(visited)) 
+    #     qc = QuantumCircuit(len(path[0].labels[0]))
         
-        all_basis_sts=[elem for seg in path for elem in seg.labels]
-        # print("all basis sts ", all_basis_sts)
-        visited = [[int(char) for char in st] for st in list(dict.fromkeys(all_basis_sts))]
-        path=path[::-1]
-        # print("reversed path ", path)
-        # print("#########################")
-        # print("unique basis sts ", visited)
-        path_mutable=deepcopy(path)
-        for idx, _ in enumerate(path):
-            segment=path_mutable[idx]
-            # print(path_mutable)
-            origin = [int(char) for char in segment.labels[0]]
-            destination = [int(char) for char in segment.labels[1]]
-            diff_inds = np.where(np.array(origin) != np.array(destination))[0]
-            diff_var_dummy=diff_inds.tolist()
-            interaction_ind = diff_inds[0]
-            # print("diffs: ", diff_var_dummy)
+    #     all_basis_sts=[elem for seg in path for elem in seg.labels]
+    #     # print("all basis sts ", all_basis_sts)
+    #     visited = [[int(char) for char in st] for st in list(dict.fromkeys(all_basis_sts))]
+    #     path=path[::-1]
+    #     # print("reversed path ", path)
+    #     # print("#########################")
+    #     # print("unique basis sts ", visited)
+    #     path_mutable=deepcopy(path)
+    #     for idx, _ in enumerate(path):
+    #         segment=path_mutable[idx]
+    #         # print(path_mutable)
+    #         origin = [int(char) for char in segment.labels[0]]
+    #         destination = [int(char) for char in segment.labels[1]]
+    #         diff_inds = np.where(np.array(origin) != np.array(destination))[0]
+    #         diff_var_dummy=diff_inds.tolist()
+    #         interaction_ind = diff_inds[0]
+    #         # print("diffs: ", diff_var_dummy)
 
-            # print("initial visited: ", visited)
-            # print("destination: ", destination)
-            # print("origin ", origin)
-            visited=[elem for elem in visited if elem!=destination]
-            visited_transformed = copy.deepcopy(visited)
-            # visited_transformed = [elem for elem in visited_transformed if elem!=destination]
-            # print("popped destination transformed: ", visited_transformed)
-            # print()
+    #         # print("initial visited: ", visited)
+    #         # print("destination: ", destination)
+    #         # print("origin ", origin)
+    #         visited=[elem for elem in visited if elem!=destination]
+    #         visited_transformed = copy.deepcopy(visited)
+    #         # visited_transformed = [elem for elem in visited_transformed if elem!=destination]
+    #         # print("popped destination transformed: ", visited_transformed)
+    #         # print()
             
 
-            for ind in diff_inds[1:]:
-                qc.cx(interaction_ind, ind)
-                PathConverter.update_visited(visited_transformed, interaction_ind, ind)
+    #         for ind in diff_inds[1:]:
+    #             qc.cx(interaction_ind, ind)
+    #             PathConverter.update_visited(visited_transformed, interaction_ind, ind)
 
-            origin_ind = visited.index(origin)
-            # print("origin index ", origin_ind)
-            if reduce_controls:
-                control_indices = PathConverter.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
-            else:
-                control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
+    #         origin_ind = visited.index(origin)
+    #         # print("origin index ", origin_ind)
+    #         if reduce_controls:
+    #             control_indices = PathConverter.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+    #         else:
+    #             control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
 
-            # if control_indices is None:
-            # print("visited ", visited)
-            # print("visited transformed ", visited_transformed)
-            # print("interaction index ", interaction_ind)
-            # print("destination ", destination)
-            # print("controls ", control_indices)
-            # print("diff indices ", diff_inds)
-            for ind in control_indices:
-                if visited_transformed[origin_ind][ind] == 0:
-                    qc.x(ind)
+    #         # if control_indices is None:
+    #         # print("visited ", visited)
+    #         # print("visited transformed ", visited_transformed)
+    #         # print("interaction index ", interaction_ind)
+    #         # print("destination ", destination)
+    #         # print("controls ", control_indices)
+    #         # print("diff indices ", diff_inds)
+    #         for ind in control_indices:
+    #             if visited_transformed[origin_ind][ind] == 0:
+    #                 qc.x(ind)
 
-            # rz_angle = 2 * segment.phase_time
-            # rx_angle = 2 * segment.amplitude_time
-            # if origin[interaction_ind] == 1:
-            #     rz_angle *= -1
+    #         # rz_angle = 2 * segment.phase_time
+    #         # rx_angle = 2 * segment.amplitude_time
+    #         # if origin[interaction_ind] == 1:
+    #         #     rz_angle *= -1
 
-            # if not control_indices:
-            #     if rz_angle != 0:
-            #         rz_gate = RZGate(rz_angle)
-            #         qc.append(rz_gate, control_indices + [interaction_ind])
-            #     if rx_angle != 0:
-            #         rx_gate = RXGate(rx_angle)
-            #         qc.append(rx_gate, control_indices + [interaction_ind])
-            # else:
-            #     gate_definition=np.array([[np.exp(-1j*rz_angle/2)*np.cos(rx_angle/2),-1j*np.exp(1j*rz_angle/2)*np.sin(rx_angle/2)],
-            #                                 [-1j*np.exp(-1j*rz_angle/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle/2)*np.cos(rx_angle/2)]])
-            #     # gate_definition = UGate(rx_angle, -(rz_angle/2+3*np.pi/2), -rz_angle/2+3*np.pi/2, label="U").to_matrix()
-            #     Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
-            rx_angle = 2 * segment.amplitude_time
-            rx_angle = -rx_angle #do the opposite since we will be inverting
-            # print("rx angle ", rx_angle)
-            if rx_angle != 0:
-                rx_gate = RXGate(rx_angle)
-                if len(control_indices) > 0:
-                    rx_gate = rx_gate.control(len(control_indices))
-                qc.append(rx_gate, control_indices + [interaction_ind])
-                # visited.append(destination)
+    #         # if not control_indices:
+    #         #     if rz_angle != 0:
+    #         #         rz_gate = RZGate(rz_angle)
+    #         #         qc.append(rz_gate, control_indices + [interaction_ind])
+    #         #     if rx_angle != 0:
+    #         #         rx_gate = RXGate(rx_angle)
+    #         #         qc.append(rx_gate, control_indices + [interaction_ind])
+    #         # else:
+    #         #     gate_definition=np.array([[np.exp(-1j*rz_angle/2)*np.cos(rx_angle/2),-1j*np.exp(1j*rz_angle/2)*np.sin(rx_angle/2)],
+    #         #                                 [-1j*np.exp(-1j*rz_angle/2)*np.sin(rx_angle/2), np.exp(1j*rz_angle/2)*np.cos(rx_angle/2)]])
+    #         #     # gate_definition = UGate(rx_angle, -(rz_angle/2+3*np.pi/2), -rz_angle/2+3*np.pi/2, label="U").to_matrix()
+    #         #     Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
+    #         rx_angle = 2 * segment.amplitude_time
+    #         rx_angle = -rx_angle #do the opposite since we will be inverting
+    #         # print("rx angle ", rx_angle)
+    #         if rx_angle != 0:
+    #             rx_gate = RXGate(rx_angle)
+    #             if len(control_indices) > 0:
+    #                 rx_gate = rx_gate.control(len(control_indices))
+    #             qc.append(rx_gate, control_indices + [interaction_ind])
+    #             # visited.append(destination)
 
 
-            rz_angle = 2 * segment.phase_time
-            rz_angle = -rz_angle #do the opposite since we will be inverting
-            # print("rz angle ", rz_angle)
-            if origin[interaction_ind] == 1:
-                rz_angle *= -1
-            if rz_angle != 0:
-                rz_gate = RZGate(rz_angle)
-                if len(control_indices) > 0:
-                    rz_gate = rz_gate.control(len(control_indices))
-                qc.append(rz_gate, control_indices + [interaction_ind])
-            # print(qc)
+    #         rz_angle = 2 * segment.phase_time
+    #         rz_angle = -rz_angle #do the opposite since we will be inverting
+    #         # print("rz angle ", rz_angle)
+    #         if origin[interaction_ind] == 1:
+    #             rz_angle *= -1
+    #         if rz_angle != 0:
+    #             rz_gate = RZGate(rz_angle)
+    #             if len(control_indices) > 0:
+    #                 rz_gate = rz_gate.control(len(control_indices))
+    #             qc.append(rz_gate, control_indices + [interaction_ind])
+    #         # print(qc)
             
-            for ind in control_indices:
-                if visited_transformed[origin_ind][ind] == 0:
-                    qc.x(ind)
+    #         for ind in control_indices:
+    #             if visited_transformed[origin_ind][ind] == 0:
+    #                 qc.x(ind)
 
-            # update the set of visited
-            for ind in diff_inds[1:]:
-                destination_transformed=[destination]
-                PathConverter.update_visited(destination_transformed, interaction_ind, ind)
-                destination=destination_transformed[0]
-                # print("updating destination and path")
-                # update the target state.
-                for segment in path_mutable:
-                    z1=[[int(char) for char in segment.labels[0]]]
-                    z2=[[int(char) for char in segment.labels[1]]]
-                    # print(f"initial {z1} {z2}")
-                    PathConverter.update_visited(z1, interaction_ind, ind)
-                    PathConverter.update_visited(z2, interaction_ind, ind)
-                    # print(f"updated {z1} {z2}")
-                    segment.labels[0]="".join(list(map(str,z1[0])))
-                    segment.labels[1]="".join(list(map(str,z2[0])))
-                    # print(f"attached {segment.labels[0]} {segment.labels[1]}")
+    #         # update the set of visited
+    #         for ind in diff_inds[1:]:
+    #             destination_transformed=[destination]
+    #             PathConverter.update_visited(destination_transformed, interaction_ind, ind)
+    #             destination=destination_transformed[0]
+    #             # print("updating destination and path")
+    #             # update the target state.
+    #             for segment in path_mutable:
+    #                 z1=[[int(char) for char in segment.labels[0]]]
+    #                 z2=[[int(char) for char in segment.labels[1]]]
+    #                 # print(f"initial {z1} {z2}")
+    #                 PathConverter.update_visited(z1, interaction_ind, ind)
+    #                 PathConverter.update_visited(z2, interaction_ind, ind)
+    #                 # print(f"updated {z1} {z2}")
+    #                 segment.labels[0]="".join(list(map(str,z1[0])))
+    #                 segment.labels[1]="".join(list(map(str,z2[0])))
+    #                 # print(f"attached {segment.labels[0]} {segment.labels[1]}")
 
-            # print("updating visited.")
-            visited=[list(x) for x in set(tuple(x) for x in visited_transformed)]
-            # print("visited transformed: ", visited_transformed)
-                # for ind in reversed(diff_inds[1:]):
-                #     qc.cx(interaction_ind, ind)      
-                # visited.append(destination)      
+    #         # print("updating visited.")
+    #         visited=[list(x) for x in set(tuple(x) for x in visited_transformed)]
+    #         # print("visited transformed: ", visited_transformed)
+    #             # for ind in reversed(diff_inds[1:]):
+    #             #     qc.cx(interaction_ind, ind)      
+    #             # visited.append(destination)      
 
             
-                # circ_end.barrier()
+    #             # circ_end.barrier()
 
-            # for ind in diff_inds[1:]:
-            #     circ_end.cx(interaction_ind, ind)
+    #         # for ind in diff_inds[1:]:
+    #         #     circ_end.cx(interaction_ind, ind)
 
-            # for ind in control_indices:
-            #     if visited_transformed[origin_ind][ind] == 0:
-            #         circ_end.x(ind)            
+    #         # for ind in control_indices:
+    #         #     if visited_transformed[origin_ind][ind] == 0:
+    #         #         circ_end.x(ind)            
 
-            if add_barriers:
-                qc.barrier()
-        # print("visited ", visited)
-        starting_state = "".join([str(char) for char in visited[0]])
-        # circ_end=QuantumCircuit(len(starting_state))
-        indices_1 = [ind for ind, elem in enumerate(starting_state) if elem == "1"]
-        for ind in indices_1:
-            qc.x(ind)
-        if add_barriers:
-            qc.barrier()
+    #         if add_barriers:
+    #             qc.barrier()
+    #     # print("visited ", visited)
+    #     starting_state = "".join([str(char) for char in visited[0]])
+    #     # circ_end=QuantumCircuit(len(starting_state))
+    #     indices_1 = [ind for ind, elem in enumerate(starting_state) if elem == "1"]
+    #     for ind in indices_1:
+    #         qc.x(ind)
+    #     if add_barriers:
+    #         qc.barrier()
 
-        # print(qc)
-        # qc.barrier()
-        # qc.barrier()
-        # print("circ end ", circ_end)
-        # qc=qc.compose(Clifford(circ_end.inverse()).to_circuit())
-        qc=qc.inverse()
-        # print(circ_end)
-        # print(qc)
+    #     # print(qc)
+    #     # qc.barrier()
+    #     # qc.barrier()
+    #     # print("circ end ", circ_end)
+    #     # qc=qc.compose(Clifford(circ_end.inverse()).to_circuit())
+    #     qc=qc.inverse()
+    #     # print(circ_end)
+    #     # print(qc)
 
-        if remove_leading_cx:
-            qc = PathConverter.remove_leading_cx(qc)
+    #     if remove_leading_cx:
+    #         qc = PathConverter.remove_leading_cx(qc)
 
-        return qc
+    #     return qc
