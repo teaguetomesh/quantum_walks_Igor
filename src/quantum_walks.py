@@ -256,52 +256,6 @@ class PathFinder(ABC):
         # print("path from pairs", path)
         return path
     
-    # def get_path_segments_from_pairs_leafsm_test(self, graph: Graph, pairs: list[list[str, str]], target_state: dict[str, complex]) -> list[PathSegment]:
-    #     """
-    #     Returns a list of path segments describing state preparation path.
-    #     :param graph: Travel graph.
-    #     :param target_state: Dict of non-zero amplitudes in the target state.
-    #     :return: List of path segments.
-    #     """
-    #     tol = 1e-10
-    #     # bfs_edges = list(nx.bfs_edges(graph, graph.graph["start"]))
-    #     bfs_edges = pairs[::-1] #we're doing an RXRZ pattern.
-    #     path = []
-    #     # print("edges bfs from pairs:", bfs_edges)
-    #     # print("start from pairs", bfs_edges[0][0])
-    #     for edge in bfs_edges:
-    #         if len(edge)==3:
-    #             interaction_ind=edge[2]
-    #             edge=edge[:-1:]
-    #         else:
-    #             interaction_ind=None
-    #         if graph.degree(edge[1]) != 1:
-    #             phase_walk_time = (1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
-    #             graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
-    #             if abs(phase_walk_time) < tol:
-    #                 phase_walk_time = 0
-
-    #             amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
-    #             graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
-    #             graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
-    #             graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
-    #             path.append(PathSegment(list(edge), phase_walk_time, amplitude_walk_time, interaction_index=interaction_ind))
-
-    #         else:
-    #             phase_walk_time1 = (-1j * np.log(graph.nodes[edge[0]]["target_phase"] / graph.nodes[edge[0]]["current_phase"])).real
-    #             graph.nodes[edge[0]]["current_phase"] = graph.nodes[edge[0]]["target_phase"]
-    #             if abs(phase_walk_time1) < tol:
-    #                 phase_walk_time1 = 0
-    #             amplitude_walk_time = np.arcsin(np.sqrt(graph.nodes[edge[1]]["target_prob"] / graph.nodes[edge[0]]["current_prob"]))
-    #             graph.nodes[edge[0]]["current_prob"] -= graph.nodes[edge[1]]["target_prob"]
-    #             graph.nodes[edge[1]]["current_prob"] = graph.nodes[edge[1]]["target_prob"]
-    #             graph.nodes[edge[1]]["current_phase"] = -1j * graph.nodes[edge[0]]["current_phase"]
-    #             phase_walk_time2 = (-1j * np.log(graph.nodes[edge[1]]["target_phase"] / graph.nodes[edge[1]]["current_phase"])).real
-    #             graph.nodes[edge[1]]["current_phase"] = graph.nodes[edge[1]]["target_phase"]
-    #             path.append(LeafPathSegment(list(edge), phase_walk_time1, phase_walk_time2, amplitude_walk_time, interaction_index=interaction_ind))
-    #     # print("path from pairs", path)
-    #     return path
-    
     def get_path_segments_from_pairs(self, graph: Graph, pairs: list[list[str, str]], target_state: dict[str, complex]) -> list[PathSegment]:
         """
         Returns a list of path segments describing state preparation path.
@@ -573,11 +527,6 @@ class PathFinderMHSNonlinear(PathFinder):
             return [elem2 for elem2 in basis if elem2!=elem]
         def _get_z2_mhs_score(elem, z2_search):
             '''returns the number of controls required to differentiate z2.'''
-            # print("z1 ", elem)
-            # print("remaining basis1 ", remaining_basis1)
-            # print("diffs1 ", diffs1)
-            # print("mhs1 ", mhs1)
-            # print("z2 search ", z2_search)
             if len(z2_search)>1:
                 z2_search=sorted(z2_search, key=lambda z2:
                                     (PathFinderMHSLinear.get_mhs_score(z2, _create_remaining_basis(z2, z2_search)),
@@ -1078,6 +1027,6 @@ def find_min_control_set(existing_states: list[list[int]], target_state_ind: int
 if __name__=="__main__":
     amp=1/np.sqrt(6)
     basis=["000001", "000011", "000111", "001111", "011111", "111111"]
-    pathf=PathFinderMHSLinear()
+    pathf=PathFinderMHSNonlinear()
     print(pathf.build_travel_graph(basis)[1])
     
