@@ -17,9 +17,6 @@ from qclib.gates.ldmcu import Ldmcu
 from qiskit.circuit.library import UGate, UnitaryGate
 from qiskit.circuit.library import RZGate, RXGate, PhaseGate
 
-
-
-
 from src.quantum_walks import (PathFinder, PathFinderLinear, PathFinderSHP, PathFinderMST, 
     PathFinderRandom, PathFinderGrayCode, GleinigPathFinder, GleinigWalk,
     PathFinderFromPairs, GleinigPathFinderPframes, PathFinderMHSNonlinear,
@@ -130,7 +127,7 @@ def merge_state_files():
 
 def run_prepare_state():
     # print("min cx ", prepare_state_brute(init_state, len(init_state.keys())))
-    num_qubits_all=np.array(list(range(5,8)))
+    num_qubits_all=np.array(list(range(5,12)))
     file_idxs=None
     # file_idxs=[4,5]
     num_amplitudes_all=num_qubits_all
@@ -144,13 +141,13 @@ def run_prepare_state():
     # method="qiskit"
     method="mhs_walks"
     # method="merging_states"
-    out_col_name="mhs_linear"
+    # out_col_name="mhs_linear"
     # out_col_name="shp_reduced"
     # out_col_name="mst_reduced"
     # out_col_name="random_reduced"
     # out_col_name="random"
     # out_col_name="qiskit"
-    # out_col_name="mhs_nonlinear" 
+    out_col_name="mhs_nonlinear" 
     # out_col_name="mhs_nonlinear_not_reduced" 
     # out_col_name="linear_reduced"
     # out_col_name="merging_states"
@@ -191,33 +188,6 @@ def run_prepare_state():
         df[out_col_name] = results
         # df.to_csv(cx_counts_file_path, index=False)
         print(f"Avg CX: {np.mean(df[out_col_name])}\n")
-
-# def bruteforce_orders():
-#     method = "walks"
-#     num_qubits_all = 5
-#     num_amplitudes_all = num_qubits_all
-#     reduce_controls = True
-#     check_fidelity = True
-#     optimization_level = 3
-#     basis_gates = ["rx", "ry", "rz", "h", "cx"]
-
-#     states_file_path = f"data/qubits_{num_qubits_all}/m_{num_amplitudes_all}/states.pkl"
-#     with open(states_file_path, "rb") as f:
-#         state_list = pickle.load(f)
-
-#     # path_finder = PathFinderLinear([0, 4, 1, 2, 3])
-#     # path_finder = PathFinderLinear([0, 2, 4, 1, 3])
-#     path_finder = PathFinderGrayCode()
-#     cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
-
-#     all_permutations = list(permutations(range(num_amplitudes_all), num_amplitudes_all))
-#     results = []
-#     for perm in all_permutations:
-#         path_finder = PathFinderLinear(list(perm))
-#         cx_count = prepare_state(state_list[1], method, path_finder, basis_gates, optimization_level, check_fidelity, reduce_controls=reduce_controls)
-#         results.append(cx_count)
-
-#     print(f"Min CX: {np.min(results)}\n")
 
 
 def run_bruteforce_order_state(num_workers, algo_type, num_qubits_all, file_idxs):
@@ -839,7 +809,7 @@ if __name__ == "__main__":
     # out_col_name="mhs_linear" #qiskit, linear, linear_reduced, shp_reduced, mst_reduced, shp, mst, random, random_reduced
     #graycode_reudced, gleinig, mhs_linear, mhs_nonlinear
 
-    # run_prepare_state()
+    run_prepare_state()
     # create example circ.
     # reduce_controls = True
     # check_fidelity = True
@@ -852,9 +822,9 @@ if __name__ == "__main__":
     # prepare_state(init_state, method, path_finder,  basis_gates, optimization_level, check_fidelity,
     #               reduce_controls, remove_leading_cx, add_barriers)
     # run_greedy_order_state(num_workers=6, start_type="mhs")
-    num_qubits_all=np.array(list(range(5,12)))
-    num_amplitudes_all=num_qubits_all
-    combined_method("greedy_insertion_mhs", "mhs_linear", "greedy_insertion_mhs_combined", num_amplitudes_all, num_amplitudes_all)
+    # num_qubits_all=np.array(list(range(5,12)))
+    # num_amplitudes_all=num_qubits_all
+    # combined_method("greedy_insertion_mhs", "mhs_linear", "greedy_insertion_mhs_combined", num_amplitudes_all, num_amplitudes_all)
     # rename_column("greedy_insertion_mhs", "greedy_insertion_mhs_combined")
     # method="merging_states"
     # out_col_name=method

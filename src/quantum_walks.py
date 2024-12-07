@@ -14,6 +14,7 @@ from itertools import permutations
 import os
 from networkx.algorithms import descendants
 from pysat.examples.hitman import Hitman
+import matplotlib.pyplot as plt
 
 # currdir=os.getcwd()
 # print(currdir)
@@ -316,6 +317,16 @@ class PathFinder(ABC):
         :return: List of path segments.
         """
         travel_graph, basis_pairs = self.build_travel_graph(list(target_state.keys()))
+
+        # plt.clf()
+        # labels = nx.get_edge_attributes(travel_graph,'weight')
+        # pos = nx.spring_layout(travel_graph)
+        # nx.draw(travel_graph, pos, with_labels=True, node_color="lightblue")
+        # nx.draw_networkx_edge_labels(travel_graph, pos, edge_labels=labels)
+        # # Save the figure to a file
+        # plt.savefig(f"graph_example.png")
+        # plt.clf()
+        
         # print("initial pairs ", basis_pairs)
         self.set_graph_attributes_from_pairs(travel_graph, basis_pairs, target_state)
         # print("after pairs ", basis_pairs)
