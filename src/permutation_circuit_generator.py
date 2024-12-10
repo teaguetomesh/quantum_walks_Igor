@@ -52,13 +52,6 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
             score: float
             gate: SwapGate
 
-        def apply_x(all_bases_old: ndarray, difference: ndarray, num_ancillas: int, qc: QuantumCircuit):
-            for i in range(difference.shape[1]):
-                if np.sum(difference[:, i]) > 0:
-                    qc.x(i + num_ancillas)
-                    all_bases_old[:, i] ^= 1
-                    difference[:, i] *= -1
-
         def find_best_swap(all_bases_old: ndarray, difference: ndarray) -> Swap:
             @dataclass
             class Group:
@@ -130,9 +123,8 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
                 return graph
 
             best_swap_overall = None
-            largest_diff_col = np.argmax(np.sum(difference, 0))
-            selected_cols_final = [largest_diff_col]
-            for num_cols in range(2, difference.shape[1] + 1):
+            selected_cols_final = []
+            for num_cols in range(1, difference.shape[1] + 1):
                 best_swap_layer = None
                 for candidate_col_ind in range(difference.shape[1]):
                     if candidate_col_ind in selected_cols_final:
@@ -153,17 +145,20 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
 
         def implement_swap(swap: Swap, num_ancillas: int, qc: QuantumCircuit, all_bases_old: ndarray, difference: ndarray):
             selected_cols = np.array(swap.selected_cols)
-            conjugation_qc = QuantumCircuit(qc.num_qubits)
-            for ind in swap.gate.conjugated_target_inds:
-                if ind == swap.gate.target_ind:
-                    continue
-                conjugation_qc.cx(selected_cols[swap.gate.target_ind] + num_ancillas, selected_cols[ind] + num_ancillas)
-            qc.compose(conjugation_qc, inplace=True)
-            control_inds = list(selected_cols[swap.gate.control_inds] + num_ancillas)
-            control_vals = ''.join([str(val) for val in swap.gate.control_vals])
-            target_ind = selected_cols[swap.gate.target_ind] + num_ancillas
-            qc.mcx(control_inds, target_ind, 0, 'recursion', control_vals[::-1])
-            qc.compose(conjugation_qc.reverse_ops(), inplace=True)
+            if len(swap.gate.control_inds) == 0:
+                qc.x(selected_cols[swap.gate.target_ind] + num_ancillas)
+            else:
+                conjugation_qc = QuantumCircuit(qc.num_qubits)
+                for ind in swap.gate.conjugated_target_inds:
+                    if ind == swap.gate.target_ind:
+                        continue
+                    conjugation_qc.cx(selected_cols[swap.gate.target_ind] + num_ancillas, selected_cols[ind] + num_ancillas)
+                qc.compose(conjugation_qc, inplace=True)
+                control_inds = list(selected_cols[swap.gate.control_inds] + num_ancillas)
+                control_vals = ''.join([str(val) for val in swap.gate.control_vals])
+                target_ind = selected_cols[swap.gate.target_ind] + num_ancillas
+                qc.mcx(control_inds, target_ind, 0, 'recursion', control_vals[::-1])
+                qc.compose(conjugation_qc.reverse_ops(), inplace=True)
             all_bases_old[np.ix_(swap.row_inds, selected_cols[swap.gate.conjugated_target_inds])] ^= 1
             difference[np.ix_(swap.row_inds, selected_cols[swap.gate.conjugated_target_inds])] *= -1
 
@@ -172,7 +167,6 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
         difference = (all_bases_old ^ all_bases_new) * 2 - 1
         num_ancillas = 1
         qc = QuantumCircuit(all_bases_old.shape[1] + num_ancillas)
-        apply_x(all_bases_old, difference, num_ancillas, qc)
         while np.any(difference == 1):
             swap = find_best_swap(all_bases_old, difference)
             implement_swap(swap, num_ancillas, qc, all_bases_old, difference)
