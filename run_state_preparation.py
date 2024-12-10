@@ -85,10 +85,10 @@ def run_prepare_state():
     #                                                         permutation_circuit_generator=PermutationCircuitGeneratorSparse())
     # circuit_generator = MultiEdgeGeneratorSparse()
 
-    num_qubits_all = np.array(list(range(6, 12)))
-    num_amplitudes_all = num_qubits_all
+    num_qubits_all = np.array(list(range(7, 12)))
+    num_amplitudes_all = num_qubits_all ** 2
     out_col_name = "qiskit_dense"
-    num_workers = 10
+    num_workers = 12
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
@@ -100,9 +100,6 @@ def run_prepare_state():
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
-
-            # # DEBUG
-            # state_list = state_list[4:]
 
         results = []
         if num_workers == 1:
