@@ -51,12 +51,12 @@ def plot_walk_order_comparison():
 
 
 def plot_qiskit_comparison():
-    methods_all = ["shp_reduced", "qiskit", "qiskit_dense", "multiedge_dense"]
+    methods_all = ["shp_reduced", "qiskit", "qiskit_dense", "multiedge"]
     densities_all = [lambda n: n, lambda n: n ** 2, lambda n: 2 ** (n - 1)]
     figure_id = 0
 
     for method_ind, method in enumerate(methods_all):
-        densities = densities_all[0:1] if method_ind > 1 else densities_all
+        densities = densities_all[0:2]
         for density_ind, density in enumerate(densities):
             if method == "shp_reduced" and density_ind == 2:
                 num_qubits = np.array(range(5, 10))
@@ -65,14 +65,14 @@ def plot_qiskit_comparison():
             num_amplitudes = [densities_all[density_ind](n) for n in num_qubits]
             plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, density_ind, method_ind, "_nolabel_", figure_id)
 
-    circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=10, label="Quantum Walks")
+    circle_marker = Line2D([0], [0], linestyle="", color="k", marker="o", markersize=10, label="Single-Edge")
     star_marker = Line2D([0], [0], linestyle="", color="k", marker="*", markersize=10, label="Qiskit")
     x_marker = Line2D([0], [0], linestyle="", color="k", marker="X", markersize=10, label="Qiskit Dense")
-    triangle_marker = Line2D([0], [0], linestyle="", color="k", marker="v", markersize=10, label="Multi-edge QW")
+    triangle_marker = Line2D([0], [0], linestyle="", color="k", marker="v", markersize=10, label="Multi-Edge")
     blue_line = Line2D([0], [0], color="b", label=r"$m = n$")
     red_line = Line2D([0], [0], color="r", label=r"$m = n^2$")
     green_line = Line2D([0], [0], color="g", label=r"$m = 2^{n-1}$")
-    plt.legend(handles=[circle_marker, star_marker, x_marker, triangle_marker, blue_line, red_line, green_line], draggable=True)
+    plt.legend(handles=[circle_marker, star_marker, x_marker, triangle_marker, blue_line, red_line], draggable=True)
     save_figure()
 
 
