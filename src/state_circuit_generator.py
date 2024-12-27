@@ -1,12 +1,15 @@
 """ Module for functions related to circuit generation for arbitrary state preparation via quantum walks. """
+from __future__ import annotations
+
 import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-import networkx as nx
 import numpy as np
 from networkx.algorithms import matching
+from networkx.classes import Graph
 from numpy import ndarray
+from pandas.core.array_algos.transforms import shift
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
@@ -27,7 +30,7 @@ class StateCircuitGenerator(ABC):
         pass
 
 
-class StateCircuitGeneratorQiskitDefault(StateCircuitGenerator):
+class QiskitDefaultGenerator(StateCircuitGenerator):
     """ Generates state preparation circuit via qiskit's default built-in method. """
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
@@ -39,7 +42,7 @@ class StateCircuitGeneratorQiskitDefault(StateCircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class StateCircuitGeneratorSingleEdge(StateCircuitGenerator):
+class SingleEdgeGenerator(StateCircuitGenerator):
     """
     Finds a particular path through the target basis states and generates the circuit based on single-edge segments of that path.
     :var path_finder: PathFinder class implementing a particular heuristic for finding path through the basis states.
@@ -104,11 +107,11 @@ class StateCircuitGeneratorSingleEdge(StateCircuitGenerator):
             visited_transformed = copy.deepcopy(visited)
             for ind in diff_inds[1:]:
                 qc.cx(interaction_ind, ind)
-                StateCircuitGeneratorSingleEdge.update_visited(visited_transformed, interaction_ind, ind)
+                SingleEdgeGenerator.update_visited(visited_transformed, interaction_ind, ind)
 
             origin_ind = visited.index(origin)
             if self.reduce_controls:
-                control_indices = StateCircuitGeneratorSingleEdge.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+                control_indices = SingleEdgeGenerator.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
             else:
                 control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
 
@@ -143,7 +146,7 @@ class StateCircuitGeneratorSingleEdge(StateCircuitGenerator):
                 qc.barrier()
 
         if self.remove_leading_cx:
-            qc = StateCircuitGeneratorSingleEdge.remove_leading_cx_gates(qc)
+            qc = SingleEdgeGenerator.remove_leading_cx_gates(qc)
 
         return qc.reverse_bits()
 
@@ -154,7 +157,7 @@ class StateCircuitGeneratorSingleEdge(StateCircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class StateCircuitGeneratorDensePermute(StateCircuitGenerator):
+class DensePermuteGenerator(StateCircuitGenerator):
     """ Generates a circuit for a dense state, then permutes it to the target state.
     dense_permutation_generator has to generate a permutation into the smallest number of qubits able to fit the target state. """
     dense_permutation_generator: PermutationGenerator
@@ -187,7 +190,7 @@ class StateCircuitGeneratorDensePermute(StateCircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class StateCircuitGeneratorQiskitDense(StateCircuitGeneratorDensePermute):
+class QiskitDenseGeneratorGenerator(DensePermuteGenerator):
     """ Uses qiskit's built-in state preparation on dense state. """
 
     def get_dense_state_circuit(self, dense_state: list[complex]) -> QuantumCircuit:
@@ -199,7 +202,7 @@ class StateCircuitGeneratorQiskitDense(StateCircuitGeneratorDensePermute):
 
 
 @dataclass(kw_only=True)
-class StateCircuitGeneratorMultiEdgeDense(StateCircuitGeneratorDensePermute):
+class MultiEdgeDenseGeneratorGenerator(DensePermuteGenerator):
     """ Uses multi-edge walk to prepare a dense state. """
 
     def apply_mcrx(self, time: float, target_ind: int, control_inds: ndarray, qc: QuantumCircuit, current_state: Statevector):
@@ -261,63 +264,370 @@ class StateCircuitGeneratorMultiEdgeDense(StateCircuitGeneratorDensePermute):
         return qc
 
 
-class MultiEdgeGeneratorSparse(StateCircuitGenerator):
+@dataclass
+class MultiEdgeSparseGenerator(StateCircuitGenerator):
     """ Uses sparse state preparation with multi-edge approach. """
+    permutation_circuit_generator: PermutationCircuitGenerator
 
-    # def get_edge_distance(self, edge1: tuple[str, str | None], edge2: tuple[str, str | None]) -> tuple[int, tuple[str, str]]:
-    #     """ Calculates distance between two edges as minimum Hamming distances between their nodes. Returns distance and node pair achieving it. """
-    #     min_distance = None
-    #     node1 = node2 = None
-    #     for n1, n2 in product(edge1, edge2):
-    #         if n1 is None or n2 is None:
-    #             continue
-    #         distance = sum(n1[k] != n2[k] for k in range(len(n1)))
-    #         if min_distance is None or distance < min_distance:
-    #             min_distance = distance
-    #             node1 = n1
-    #             node2 = n2
-    #     return min_distance, (node1, node2)
+    @dataclass
+    class TreeEdge:
+        bases: (str, str)
+        transformed_bases: (str, str) = None
+        probabilities: (float, float) = None
+
+    @dataclass
+    class TreeLevel:
+        rx_dims: list[int]
+        target_ind: int
+        edges: list[(TreeEdge, list[int], str)]
+
+    @dataclass
+    class GreedyNode:
+        cost: int | float
+        input: list[int] | None
+        output: tuple | None
 
     def get_basis_distance(self, basis1: str, basis2: str, rx_dims: list[int] | None) -> int:
         """ Calculates modified Hamming distance between two bitstrings of equal length. """
         diff_inds = np.array([basis1[i] != basis2[i] for i in range(len(basis1))])
         if rx_dims is not None:
-            diff_inds[rx_dims] ^= 1
+            diff_inds[rx_dims] ^= True
         return sum(diff_inds)
 
-    def find_pairs(self, bases: list[str], rx_dims: list[int] | None) -> list[tuple[str, str]]:
-        """ Groups bases in pairs based on their modified Hamming distance. See get_basis_distance for details. """
-        pairwise_distances = np.zeros((len(bases), len(bases)), dtype=int)
-        for i in range(pairwise_distances.shape[0]):
-            for j in range(i + 1, pairwise_distances.shape[1]):
-                pairwise_distances[i, j] = pairwise_distances[j, i] = self.get_basis_distance(bases[i], bases[j], rx_dims)
-        G = nx.from_numpy_array(pairwise_distances)
-        return list(matching.min_weight_matching(G))
+    def find_pairs_greedy(self, distances: list[(int, int, int)]) -> list[(int, int)]:
+        """ Greedily picks specified number of pairs with minimal distance. """
+        distances = sorted(distances, key=lambda x: x[2])
+        pairs = []
+        used_inds = set()
+        for next_pair in distances:
+            if next_pair[0] in used_inds or next_pair[1] in used_inds:
+                continue
+            pairs.append(next_pair)
+            used_inds.update(next_pair[:2])
+        return pairs
 
-    def select_interaction_dims(self, pairs: list[tuple[str, str]]) -> list[int]:
-        """ Selects difference indices that are present in more than half pairs, or the most common difference if no difference is sufficiently common. """
-        diff_inds = np.array([np.array(list(node1)) != np.array(list(node2)) for node1, node2 in pairs])
-        diff_counts = np.sum(diff_inds, 0)
-        if any(diff_counts > len(pairs) // 2):
-            return np.where(diff_counts > len(pairs) // 2)[0].tolist()
-        return [np.argmax(diff_counts)]
+    def find_edges_dim(self, bases: list[str], rx_dims: list[int]) -> (int, list[TreeEdge]):
+        """ Finds given number of best pairs among given bases with given Rx dimensions. Returns total score of pairs and the corresponding edges. """
+        pairwise_distances = []
+        for i in range(len(bases)):
+            for j in range(i + 1, len(bases)):
+                distance = self.get_basis_distance(bases[i], bases[j], rx_dims)
+                pairwise_distances.append((i, j, distance))
 
-    def build_clustering_tree(self, target_bases: list[str]) -> list[list[tuple[str, str]]]:
-        """ Builds a hierarchy of basis clustering that minimizes total hamming distance between clusters.
-         Returns a list where the 0th index corresponds to clustering level, 1st index to edges on that level, and 2nd index to bases in that edge. """
-        num_levels = int(np.ceil(np.log2(len(target_bases))))
-        clustering_tree = []
-        for level in range(num_levels):
-            num_edges = len(target_bases) - 2 ** (num_levels - 1) if level == 0 else 2 ** (num_levels - 1 - level)
-            pairs = self.find_pairs(target_bases, None)
-            interaction_dims = self.select_interaction_dims(pairs)
-            pairs = self.find_pairs(target_bases, interaction_dims)
-            selected_edge_inds = np.array(list(cluster)[:num_edges_last_layer])
-            unselected_edge_inds = [ind for ind in range(len(prev_edges)) if ind not in selected_edge_inds]
-            selected_edges = [distance_edges[*edge] for edge in selected_edge_inds]
-            clustering_tree.append(selected_edges)
-            new_edges = selected_edges + np.array(prev_edges, dtype=object)[unselected_edge_inds].tolist()
-        return clustering_tree
+        pairs = self.find_pairs_greedy(pairwise_distances)
+        total_weight = sum(pair[2] for pair in pairs)
+        edges = [self.TreeEdge((bases[pair[0]], bases[pair[1]])) for pair in pairs]
+        return total_weight, edges
+
+    def greedy_decision_tree(self, target_func: callable, allowed_vals: list[int], stop_no_improvement: bool = False) -> list[GreedyNode]:
+        """ Takes a function that takes list of integers with allowed values from input_vals and returns a tuple with cost as the 0th element.
+        Tries to greedily find the input that minimizes cost by adding 1 number at a time to the list. Each value from input_vals can only be added once.
+        If stop_no_improvement is True, stops exploring the tree if current level did not find a better solution compared to the previous level.
+        Otherwise, continues until all allowed values are exhausted. """
+        best_sequence = [self.GreedyNode(np.inf, [], None)]
+        remaining_vals = set(allowed_vals)
+        while len(remaining_vals) > 0:
+            best_this_level = self.GreedyNode(np.inf, None, None)
+            for val in remaining_vals:
+                input = best_sequence[-1].input + [val]
+                output = target_func(input)
+                cost = output[0]
+                if cost < best_this_level.cost:
+                    best_this_level = self.GreedyNode(cost, input, output[1:])
+            if stop_no_improvement and best_this_level.cost >= best_sequence[-1].cost:
+                break
+            best_sequence.append(best_this_level)
+            remaining_vals.remove(best_this_level.input[-1])
+        return best_sequence[1:]
+
+    def find_edges(self, bases: list[str]) -> (list[int], list[TreeEdge]):
+        """ Finds given number of best pairs among given bases. Greedily chooses the best interaction dimensions for the Rx gate. """
+        target_func = lambda rx_dims: self.find_edges_dim(bases, rx_dims)
+        nodes = self.greedy_decision_tree(target_func, list(range(len(bases[0]))), True)
+        rx_dims = nodes[-1].input
+        edges = nodes[-1].output[0]
+        return rx_dims, edges
+
+    def form_remaining_edges(self, edges: list[TreeEdge], bases: list[str]):
+        """ Forms remaining edges to complete a full level and appends them to given list of edges. """
+        used_bases = {basis for edge in edges for basis in edge.bases}
+        for basis in bases:
+            if basis in used_bases:
+                continue
+            edges.append(self.TreeEdge((basis, None)))
+
+    def orient_edges(self, edges: list[TreeEdge], target_ind: int) -> list[TreeEdge]:
+        """ Chooses origin. Returns updated edges. """
+        oriented_edges = copy.deepcopy(edges)
+        for edge in oriented_edges:
+            if edge.bases[1] is not None and edge.bases[1][target_ind] == '0':
+                edge.bases = edge.bases[::-1]
+        return oriented_edges
+
+    def change_basis(self, basis: str, change_inds: list[int]) -> str:
+        """ Flips bitstring in the specified indices. """
+        changed_basis = np.array([int(val) for val in basis])
+        changed_basis[change_inds] ^= 1
+        changed_basis = ''.join([str(val) for val in changed_basis])
+        return changed_basis
+
+    def change_basis_if(self, basis: str, change_inds: list[int], control_ind: int) -> str:
+        """ Flips bitstring in the specified indices if the control index is 1. """
+        if basis[control_ind] == '0':
+            return basis
+        return self.change_basis(basis, change_inds)
+
+    def apply_transform(self, edges: list[TreeEdge], target_ind: int, rx_dims: list[int]):
+        """ Adds transformed origin. """
+        change_inds = [ind for ind in rx_dims if ind != target_ind]
+        for edge in edges:
+            edge.transformed_bases = tuple(self.change_basis_if(basis, change_inds, target_ind) if basis is not None else None for basis in edge.bases)
+
+    def get_different_inds(self, basis_1: str, basis_2: str, ignore_ind: int) -> list[int]:
+        """ Returns different indices between two bases, ignoring ignore_ind. """
+        return [ind for ind in range(len(basis_1)) if ind != ignore_ind and basis_1[ind] != basis_2[ind]]
+
+    def calculate_different_ind_matrix(self, bases: list[str], ignore_ind: int) -> ndarray[list[int]]:
+        """ Calculates a matrix where element [i, j] is a list of different indices between i-th and j-th bases, except ignore_ind. """
+        diff_ind_matrix = np.empty((len(bases), len(bases)), dtype=object)
+        for i in range(diff_ind_matrix.shape[0]):
+            for j in range(i, diff_ind_matrix.shape[1]):
+                diff_ind_matrix[i, j] = diff_ind_matrix[j, i] = self.get_different_inds(bases[i], bases[j], ignore_ind)
+        return diff_ind_matrix
+
+    def solve_minimum_hitting_set(self, sets: list[list[int]]) -> list[int]:
+        """ Finds the smallest set of integers that overlaps with all given sets. """
+        hitman = Hitman()
+        for set in sets:
+            hitman.hit(set)
+        solution = hitman.get()
+        return solution
+
+    def get_cx_cost(self, num_controls: int) -> int:
+        """ Returns the number of CX gates in the decomposition of multi-controlled Rx gate with the specified number of controls. """
+        cx_by_num_controls = [0, 2, 8, 20, 24, 40, 56, 80, 104]
+        if num_controls < len(cx_by_num_controls):
+            return cx_by_num_controls[num_controls]
+        else:
+            return cx_by_num_controls[-1] + (num_controls - len(cx_by_num_controls) - 1) * 16
+
+    def find_smallest_control_set(self, diff_ind_matrix: ndarray[list[int]], ignore_inds: list[int]) -> (int, list[int]):
+        """ Returns the smallest control set necessary to distinguish a state given by the last index in ignore_inds from other states. """
+        sets = []
+        for col_ind, diff_inds in enumerate(diff_ind_matrix[ignore_inds[-1], :]):
+            if col_ind in ignore_inds:
+                continue
+            sets.append(diff_inds)
+        control_inds = self.solve_minimum_hitting_set(sets)
+        cost = self.get_cx_cost(len(control_inds))
+        return cost, control_inds
+
+    def find_implementation_order(self, bases: list[str], target_ind: int, order_inds: list[int]) -> (int, list[(int, list[int])]):
+        """ Finds the best order to implement a given set of bases (based on control reduction) with given target ind and rx_dims. """
+        diff_ind_matrix = self.calculate_different_ind_matrix(bases, target_ind)
+        target_func = lambda order: self.find_smallest_control_set(diff_ind_matrix, order)
+        nodes = self.greedy_decision_tree(target_func, order_inds, False)[::-1]
+        total_cost = sum(node.cost for node in nodes)
+        order = [(node.input[-1], node.output[0]) for node in nodes]
+        return total_cost, order
+
+    def get_substring(self, string: str, inds: list[int]) -> str:
+        """ Returns substring at specified indices. """
+        return ''.join([string[i] for i in inds])
+
+    def get_ordered_edges(self, oriented_edges: list[TreeEdge], order: list[(int, list[int])]) -> list[(TreeEdge, list[int], str)]:
+        """ Returns edges and corresponding control indices and values according to given order. """
+        ordered_edges = []
+        for edge_ind, control_inds in order:
+            control_vals = self.get_substring(oriented_edges[edge_ind].transformed_bases[0], control_inds)
+            ordered_edges.append((oriented_edges[edge_ind], control_inds, control_vals))
+        return ordered_edges
+
+    def find_implementing_gates(self, rx_dims: list[int], edges: list[TreeEdge]) -> TreeLevel:
+        """ Finds controls, target and order for the gates implementing given rx_dims and pairs. Returns description of tree level. """
+        num_none_edges = 1 if edges[-1].bases[1] is None else 0
+        non_none_inds = list(range(len(edges) - num_none_edges))
+        best_sequence = (np.inf, None, None)
+        for target_dim in rx_dims:
+            oriented_edges = self.orient_edges(edges, target_dim)
+            self.apply_transform(oriented_edges, target_dim, rx_dims)
+            parent_bases = [edge.transformed_bases[0] for edge in oriented_edges]
+            cost, order = self.find_implementation_order(parent_bases, target_dim, non_none_inds)
+            if num_none_edges == 1:
+                order = [(len(edges) - 1, [])] + order
+            if cost < best_sequence[0]:
+                ordered_edges = self.get_ordered_edges(oriented_edges, order)
+                best_sequence = (cost, target_dim, ordered_edges)
+        return self.TreeLevel(rx_dims, *best_sequence[1:])
+
+    def calculate_probabilities(self, tree: list[TreeLevel], target_state: dict[str, complex]):
+        """ Calculates probabilities for all tree edges. """
+        for edge, _, _ in tree[-1].edges:
+            edge.probabilities = (abs(target_state[edge.bases[0]]) ** 2, abs(target_state.get(edge.bases[1], 0)) ** 2)
+        for level, next_level in reversed(list(zip(tree[:-1], tree[1:]))):
+            for edge, _, _ in level.edges:
+                prob_origin = next(sum(next_edge.probabilities) for next_edge, _, _ in next_level.edges if next_edge.bases[0] == edge.bases[0])
+                prob_dest = next(sum(next_edge.probabilities) for next_edge, _, _ in next_level.edges if next_edge.bases[0] == edge.bases[1]) if edge.bases[1] is not None else 0
+                edge.probabilities = (prob_origin, prob_dest)
+
+    def build_multiedge_tree(self, target_state: dict[str, complex]) -> list[TreeLevel]:
+        """ Builds a hierarchy of basis clusters that minimizes total hamming distance between clusters (with restrictions).
+        Returns a list of tree levels. Each level is a list of gates corresponding to each edge of the tree on that level. """
+        target_bases = list(target_state)
+        current_bases = target_bases[:]
+        tree = []
+        while len(current_bases) > 1:
+            rx_dims, edges = self.find_edges(current_bases)
+            if len(current_bases) > 2 * len(edges):
+                self.form_remaining_edges(edges, current_bases)
+            tree_level = self.find_implementing_gates(rx_dims, edges)
+            tree.append(tree_level)
+            current_bases = [edge.bases[0] for edge, _, _ in tree_level.edges]
+        tree.reverse()
+        self.calculate_probabilities(tree, target_state)
+        return tree
+
+    def update_state_phase(self, current_state: dict[str, complex], control_inds: list[int], control_vals: str, target_ind: int, rotation_time: float):
+        """ Updates current state with the result of a phase rotation. """
+        for basis in current_state:
+            basis_control_vals = self.get_substring(basis, control_inds)
+            if basis_control_vals != control_vals:
+                continue
+            sign = (-1) ** (basis[target_ind] == '0')
+            current_state[basis] *= np.exp(1j * sign * rotation_time)
+
+    def adjust_phase(self, edge: TreeEdge, control_inds: list[int], control_vals: str, target_ind: int, current_state: dict[str, complex], target_state: dict[str, complex],
+                     circuit: QuantumCircuit, mode: str = 'self'):
+        """ Adjusts phase for given edge to match target_state. If 'self' mode adjusts phase based on origin phase only.
+        In 'average' mode adjusts phase to phase average in order to simultaneously fix origin and destination phases with an additional rotation later. """
+        current_phase = np.angle(current_state[edge.transformed_bases[0]])
+        target_phase = np.angle(target_state[edge.bases[0]])
+        if mode == 'self':
+            rotation_time = target_phase - current_phase
+        elif mode == 'average':
+            target_phase_2 = np.angle(target_state[edge.bases[1]])
+            rotation_time = (target_phase + target_phase_2) / 2 + np.pi / 4 - current_phase
+        else:
+            raise Exception('Unknown mode')
+
+        if np.isclose(rotation_time, 0, atol=1e-6):
+            return
+        if abs(rotation_time) > np.pi:
+            rotation_time -= 2 * np.pi * np.sign(rotation_time)
+        if edge.transformed_bases[0][target_ind] == '0':
+            rotation_time *= -1
+        rz_gate = RZGate(2 * rotation_time)
+        if len(control_inds) > 0:
+            rz_gate = rz_gate.control(len(control_inds), ctrl_state=control_vals[::-1])
+        circuit.append(rz_gate, control_inds + [target_ind])
+        self.update_state_phase(current_state, control_inds, control_vals, target_ind, rotation_time)
+
+    def solve_rx_time(self, origin_amplitude: complex, destination_amplitude: complex, target_origin_probability: float) -> float:
+        """ Finds rotation time necessary to achieve target probability on origin. """
+        x = abs(origin_amplitude)
+        y = abs(destination_amplitude)
+        a = np.angle(origin_amplitude) - np.angle(destination_amplitude)
+        p = target_origin_probability
+        time_num = (x ** 2 * y ** 2 * (1 + np.exp(2j * a)) ** 2 - 4 * p * np.exp(2j * a) * (x ** 2 + y ** 2 - p)) ** 0.5 + np.exp(1j * a) * (x ** 2 + y ** 2 - 2 * p)
+        time_denom = np.exp(1j * a) * (y ** 2 - x ** 2) + x * y * (1 - np.exp(2j * a))
+        rotation_time = -0.5j * np.log(time_num / time_denom)
+        assert abs(rotation_time.imag) < 1e-5, f'Failed to solve for time. Time: {rotation_time}'
+        rotation_time = rotation_time.real
+        if np.isclose(y, 0, atol=1e-6):
+            rotation_time = abs(rotation_time)
+        return rotation_time
+
+    def update_state_amplitudes(self, current_state: dict[str, complex], control_inds: list[int], control_vals: str, target_ind: int, rotation_time: float):
+        """ Updates amplitudes in the current state to match the state after Rx rotation and permutation. """
+        for basis in list(current_state):
+            neighbor = self.change_basis(basis, [target_ind])
+            if basis[target_ind] == '1' and neighbor in current_state:
+                continue
+            basis_control_vals = self.get_substring(basis, control_inds)
+            if basis_control_vals != control_vals:
+                continue
+            origin_amplitude = current_state[basis]
+            destination_amplitude = current_state.get(neighbor, 0)
+            current_state[basis] = origin_amplitude * np.cos(rotation_time) - 1j * destination_amplitude * np.sin(rotation_time)
+            current_state[neighbor] = -1j * origin_amplitude * np.sin(rotation_time) + destination_amplitude * np.cos(rotation_time)
+
+    def transfer_amplitude(self, edge: TreeEdge, control_inds: list[int], control_vals: str, target_ind: int, current_state: dict[str, complex], circuit: QuantumCircuit):
+        """ Transfers amplitude for given edge to match the target state. """
+        origin_amplitude = current_state[edge.transformed_bases[0]]
+        destination_amplitude = current_state.get(self.change_basis(edge.transformed_bases[0], [target_ind]), 0)
+        total_prob = abs(origin_amplitude) ** 2 + abs(destination_amplitude) ** 2
+        rotation_time = self.solve_rx_time(origin_amplitude, destination_amplitude, total_prob)
+        rotation_time += self.solve_rx_time(total_prob ** 0.5, 0, edge.probabilities[0])
+        if np.isclose(rotation_time, 0, atol=1e-6):
+            return
+        rx_gate = RXGate(2 * rotation_time)
+        if len(control_inds) > 0:
+            rx_gate = rx_gate.control(len(control_inds), ctrl_state=control_vals[::-1])
+        circuit.append(rx_gate, control_inds + [target_ind])
+        self.update_state_amplitudes(current_state, control_inds, control_vals, target_ind, rotation_time)
+
+    def prepare_level_circuit(self, level: TreeLevel, current_state: dict[str, complex], target_state: dict[str, complex]) -> (QuantumCircuit, dict[str, complex]):
+        """ Prepares a circuit for a given tree level. """
+        conjugating_circuit = QuantumCircuit(len(next(iter(target_state))))
+        for dim in level.rx_dims:
+            if dim == level.target_ind:
+                continue
+            conjugating_circuit.cx(level.target_ind, dim)
+
+        last_level = len(level.edges) >= len(target_state) / 2
+        level_circuit = QuantumCircuit(conjugating_circuit.num_qubits)
+        level_circuit.compose(conjugating_circuit, inplace=True)
+        change_inds = [ind for ind in level.rx_dims if ind != level.target_ind]
+        current_state = {self.change_basis_if(basis, change_inds, level.target_ind): amplitude for basis, amplitude in current_state.items()}
+
+        if last_level:
+            for edge, control_inds, control_vals in level.edges:
+                if edge.bases[1] is None:
+                    continue
+                self.adjust_phase(edge, control_inds, control_vals, level.target_ind, current_state, target_state, level_circuit, 'average')
+        for edge, control_inds, control_vals in level.edges:
+            if edge.bases[1] is None:
+                continue
+            self.transfer_amplitude(edge, control_inds, control_vals, level.target_ind, current_state, level_circuit)
+        if last_level:
+            for edge, control_inds, control_vals in level.edges:
+                self.adjust_phase(edge, control_inds, control_vals, level.target_ind, current_state, target_state, level_circuit)
+
+        level_circuit.compose(conjugating_circuit.reverse_ops(), inplace=True)
+        current_state = {self.change_basis_if(basis, change_inds, level.target_ind): amplitude for basis, amplitude in current_state.items()}
+        return level_circuit.reverse_bits(), current_state
+
+    def prepare_permutation_circuit(self, level: TreeLevel, current_state: dict[str, complex]) -> QuantumCircuit:
+        """ Prepares a circuit that moves origin images to destinations and updates the current state. """
+        permutation = dict()
+        for edge, _, _ in level.edges:
+            permutation[edge.bases[0]] = edge.bases[0]
+            if edge.bases[1] is not None:
+                image = self.change_basis(edge.bases[0], level.rx_dims)
+                permutation[image] = edge.bases[1]
+                if image != edge.bases[1]:
+                    current_state[edge.bases[1]] = current_state.pop(image)
+        permutation_circuit = self.permutation_circuit_generator.get_permutation_circuit(permutation)
+        return permutation_circuit
+
+    def implement_multiedge_tree(self, tree: list[TreeLevel], target_state: dict[str, complex]) -> QuantumCircuit:
+        """ Converts multi-edge tree to its circuit implementation. """
+        overall_circuit = QuantumCircuit(len(next(iter(target_state))))
+        for ind, val in enumerate(tree[0].edges[0][0].bases[0]):
+            if val == '1':
+                overall_circuit.x(overall_circuit.num_qubits - 1 - ind)
+
+        current_state = {tree[0].edges[0][0].bases[0]: 1}
+        for level in tree:
+            level_circuit, current_state = self.prepare_level_circuit(level, current_state, target_state)
+            overall_circuit.compose(level_circuit, inplace=True)
+            permutation_circuit = self.prepare_permutation_circuit(level, current_state)
+            if permutation_circuit.num_qubits > overall_circuit.num_qubits:
+                overall_circuit = QuantumCircuit(permutation_circuit.num_qubits).compose(overall_circuit)
+            overall_circuit.compose(permutation_circuit, inplace=True)
+        return overall_circuit
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
-        clustering_tree = self.build_clustering_tree(list(target_state))
+        tree = self.build_multiedge_tree(target_state)
+        circuit = self.implement_multiedge_tree(tree, target_state)
+        return circuit
