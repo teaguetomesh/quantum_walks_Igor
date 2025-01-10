@@ -6,10 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import numpy as np
-from networkx.algorithms import matching
-from networkx.classes import Graph
 from numpy import ndarray
-from pandas.core.array_algos.transforms import shift
 from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
@@ -17,6 +14,7 @@ from qiskit.quantum_info import Statevector
 
 from src.permutation_circuit_generator import PermutationCircuitGenerator
 from src.permutation_generator import PermutationGenerator
+from src.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathSegment, PathFinder
 from src.validation import get_state_vector
 
@@ -146,7 +144,7 @@ class SingleEdgeGenerator(StateCircuitGenerator):
                 qc.barrier()
 
         if self.remove_leading_cx:
-            qc = SingleEdgeGenerator.remove_leading_cx_gates(qc)
+            qc = remove_leading_cx_gates(qc)
 
         return qc.reverse_bits()
 
@@ -190,7 +188,7 @@ class DensePermuteGenerator(StateCircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class QiskitDenseGeneratorGenerator(DensePermuteGenerator):
+class QiskitDenseGenerator(DensePermuteGenerator):
     """ Uses qiskit's built-in state preparation on dense state. """
 
     def get_dense_state_circuit(self, dense_state: list[complex]) -> QuantumCircuit:
@@ -202,7 +200,7 @@ class QiskitDenseGeneratorGenerator(DensePermuteGenerator):
 
 
 @dataclass(kw_only=True)
-class MultiEdgeDenseGeneratorGenerator(DensePermuteGenerator):
+class MultiEdgeDenseGenerator(DensePermuteGenerator):
     """ Uses multi-edge walk to prepare a dense state. """
 
     def apply_mcrx(self, time: float, target_ind: int, control_inds: ndarray, qc: QuantumCircuit, current_state: Statevector):
