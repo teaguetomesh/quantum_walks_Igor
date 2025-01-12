@@ -2,3 +2,4 @@
 data/qubits_11/m_1024/states.pkl
 **/__pycache__
 **/.pytest_cache
+/*.txt
