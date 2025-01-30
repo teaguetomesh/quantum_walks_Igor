@@ -56,8 +56,8 @@ def plot_qiskit_comparison():
     figure_id = 0
 
     for method_ind, method in enumerate(methods_all):
-        densities = densities_all[0:2]
-        for density_ind, density in enumerate(densities):
+        density_inds = [0, 1]
+        for density_ind in density_inds:
             num_qubits = np.array(range(5, 12))
             num_amplitudes = [densities_all[density_ind](n) for n in num_qubits]
             plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, density_ind, method_ind, "_nolabel_", figure_id)
