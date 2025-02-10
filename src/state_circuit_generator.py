@@ -13,9 +13,10 @@ from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
 
 from src.permutation_circuit_generator import PermutationCircuitGenerator
-from src.permutation_generator import PermutationGenerator
+from src.permutation_generator import DensePermutationGenerator
 from src.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathSegment, PathFinder
+from src.utilities import greedy_decision_tree
 from src.validation import get_state_vector
 
 
@@ -156,18 +157,18 @@ class SingleEdgeGenerator(StateCircuitGenerator):
 
 @dataclass(kw_only=True)
 class DensePermuteGenerator(StateCircuitGenerator):
-    """ Generates a circuit for a dense state, then permutes it to the target state.
-    dense_permutation_generator has to generate a permutation into the smallest number of qubits able to fit the target state. """
-    dense_permutation_generator: PermutationGenerator
+    """ Generates a circuit for a dense state, then permutes it to the target state. """
+    permutation_generator: DensePermutationGenerator
     permutation_circuit_generator: PermutationCircuitGenerator
 
     @staticmethod
-    def map_to_dense_state(state: dict[str, complex], dense_permutation: dict[str, str]) -> list[complex]:
+    def map_to_dense_state(state: dict[str, complex], dense_permutation: dict[str, str], dense_qubits: list[int]) -> list[complex]:
         """ Permutes state according to given dense permutation and returns contiguous list of amplitudes where i-th element corresponds to basis i. """
-        num_qubits_dense = int(np.ceil(np.log2(len(state))))
-        dense_state = [0] * 2 ** num_qubits_dense
-        for i, (basis, amplitude) in enumerate(state.items()):
-            ind = int(dense_permutation[basis], 2)
+        dense_state = [0] * 2 ** len(dense_qubits)
+        for basis, amplitude in state.items():
+            mapped_basis = dense_permutation[basis]
+            dense_coords = ''.join([mapped_basis[i] for i in dense_qubits])
+            ind = int(dense_coords, 2)
             dense_state[ind] = amplitude
         return dense_state
 
@@ -176,13 +177,18 @@ class DensePermuteGenerator(StateCircuitGenerator):
         pass
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
-        dense_permutation = self.dense_permutation_generator.get_permutation(target_state)
-        dense_state = self.map_to_dense_state(target_state, dense_permutation)
+        dense_permutation, dense_qubits = self.permutation_generator.get_permutation(target_state)
+        dense_state = self.map_to_dense_state(target_state, dense_permutation, dense_qubits)
         dense_state_qc = self.get_dense_state_circuit(dense_state)
         inverse_permutation = {val: key for key, val in dense_permutation.items()}
         permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(inverse_permutation)
         overall_qc = QuantumCircuit(permutation_qc.num_qubits)
-        overall_qc.append(dense_state_qc, range(dense_state_qc.num_qubits))
+        any_dense_basis = next(iter(inverse_permutation))
+        sparse_qubits = list(set(range(len(any_dense_basis))) - set(dense_qubits))
+        for qubit in sparse_qubits:
+            if any_dense_basis[qubit] == '1':
+                overall_qc.x(len(any_dense_basis) - qubit - 1)
+        overall_qc.append(dense_state_qc, list(len(any_dense_basis) - 1 - np.array(dense_qubits)[::-1]))
         overall_qc.append(permutation_qc, range(permutation_qc.num_qubits))
         return overall_qc
 
@@ -279,12 +285,6 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
         target_ind: int
         edges: list[(TreeEdge, list[int], str)]
 
-    @dataclass
-    class GreedyNode:
-        cost: int | float
-        input: list[int] | None
-        output: tuple | None
-
     def get_basis_distance(self, basis1: str, basis2: str, rx_dims: list[int] | None) -> int:
         """ Calculates modified Hamming distance between two bitstrings of equal length. """
         diff_inds = np.array([basis1[i] != basis2[i] for i in range(len(basis1))])
@@ -317,31 +317,10 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
         edges = [self.TreeEdge((bases[pair[0]], bases[pair[1]])) for pair in pairs]
         return total_weight, edges
 
-    def greedy_decision_tree(self, target_func: callable, allowed_vals: list[int], stop_no_improvement: bool = False) -> list[GreedyNode]:
-        """ Takes a function that takes list of integers with allowed values from input_vals and returns a tuple with cost as the 0th element.
-        Tries to greedily find the input that minimizes cost by adding 1 number at a time to the list. Each value from input_vals can only be added once.
-        If stop_no_improvement is True, stops exploring the tree if current level did not find a better solution compared to the previous level.
-        Otherwise, continues until all allowed values are exhausted. """
-        best_sequence = [self.GreedyNode(np.inf, [], None)]
-        remaining_vals = set(allowed_vals)
-        while len(remaining_vals) > 0:
-            best_this_level = self.GreedyNode(np.inf, None, None)
-            for val in remaining_vals:
-                input = best_sequence[-1].input + [val]
-                output = target_func(input)
-                cost = output[0]
-                if cost < best_this_level.cost:
-                    best_this_level = self.GreedyNode(cost, input, output[1:])
-            if stop_no_improvement and best_this_level.cost >= best_sequence[-1].cost:
-                break
-            best_sequence.append(best_this_level)
-            remaining_vals.remove(best_this_level.input[-1])
-        return best_sequence[1:]
-
     def find_edges(self, bases: list[str]) -> (list[int], list[TreeEdge]):
         """ Finds given number of best pairs among given bases. Greedily chooses the best interaction dimensions for the Rx gate. """
         target_func = lambda rx_dims: self.find_edges_dim(bases, rx_dims)
-        nodes = self.greedy_decision_tree(target_func, list(range(len(bases[0]))), True)
+        nodes = greedy_decision_tree(target_func, list(range(len(bases[0]))), True)
         rx_dims = nodes[-1].input
         edges = nodes[-1].output[0]
         return rx_dims, edges
@@ -424,7 +403,7 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
         """ Finds the best order to implement a given set of bases (based on control reduction) with given target ind and rx_dims. """
         diff_ind_matrix = self.calculate_different_ind_matrix(bases, target_ind)
         target_func = lambda order: self.find_smallest_control_set(diff_ind_matrix, order)
-        nodes = self.greedy_decision_tree(target_func, order_inds, False)[::-1]
+        nodes = greedy_decision_tree(target_func, order_inds, False)[::-1]
         total_cost = sum(node.cost for node in nodes)
         order = [(node.input[-1], node.output[0]) for node in nodes]
         return total_cost, order

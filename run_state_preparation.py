@@ -11,7 +11,7 @@ from qiskit.quantum_info import random_statevector, Statevector
 from tqdm import tqdm
 
 from src.permutation_circuit_generator import PermutationCircuitGeneratorSparse
-from src.permutation_generator import SequentialPermutator, MatchPermutator
+from src.permutation_generator import SequentialPermutator, MatchPermutator, HypercubePermutator
 from src.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathFinderSHP
 from src.state_circuit_generator import StateCircuitGenerator, MultiEdgeSparseGenerator, SingleEdgeGenerator, QiskitDenseGenerator, QiskitDefaultGenerator
@@ -73,13 +73,13 @@ def merge_state_files():
 def run_prepare_state():
     # circuit_generator = QiskitDefaultGenerator()
     # circuit_generator = SingleEdgeGenerator(path_finder=PathFinderSHP(), reduce_controls=True, remove_leading_cx=True, add_barriers=False)
-    circuit_generator = QiskitDenseGenerator(dense_permutation_generator=MatchPermutator(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    circuit_generator = QiskitDenseGenerator(permutation_generator=HypercubePermutator(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits_all = np.array(list(range(5, 6)))
-    num_amplitudes_all = num_qubits_all
+    num_qubits_all = np.array(list(range(7, 12)))
+    num_amplitudes_all = num_qubits_all ** 2
     out_col_name = "qiskit_dense"
-    num_workers = 1
+    num_workers = 12
     check_fidelity = True
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
@@ -91,6 +91,9 @@ def run_prepare_state():
         states_file_path = os.path.join(data_folder, "states.pkl")
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
+
+        # DEBUG
+        # state_list = state_list[2:]
 
         results = []
         if num_workers == 1:
