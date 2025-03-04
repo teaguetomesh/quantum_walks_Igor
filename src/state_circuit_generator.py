@@ -306,6 +306,9 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
 
     def find_edges_dim(self, bases: list[str], rx_dims: list[int]) -> (int, list[TreeEdge]):
         """ Finds given number of best pairs among given bases with given Rx dimensions. Returns total score of pairs and the corresponding edges. """
+        if len(rx_dims) == 0:
+            return np.inf, None
+
         pairwise_distances = []
         for i in range(len(bases)):
             for j in range(i + 1, len(bases)):
@@ -319,10 +322,10 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
 
     def find_edges(self, bases: list[str]) -> (list[int], list[TreeEdge]):
         """ Finds given number of best pairs among given bases. Greedily chooses the best interaction dimensions for the Rx gate. """
-        target_func = lambda rx_dims: self.find_edges_dim(bases, rx_dims)
-        nodes = greedy_decision_tree(target_func, list(range(len(bases[0]))), True)
-        rx_dims = nodes[-1].input
-        edges = nodes[-1].output[0]
+        target_func = lambda rx_dims, _: -self.find_edges_dim(bases, rx_dims)
+        node = greedy_decision_tree([1] * len(bases[0]), target_func, False, 1, True)[0]
+        rx_dims = node.groups
+        edges = node.extra_output[0]
         return rx_dims, edges
 
     def form_remaining_edges(self, edges: list[TreeEdge], bases: list[str]):
@@ -402,10 +405,13 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
     def find_implementation_order(self, bases: list[str], target_ind: int, order_inds: list[int]) -> (int, list[(int, list[int])]):
         """ Finds the best order to implement a given set of bases (based on control reduction) with given target ind and rx_dims. """
         diff_ind_matrix = self.calculate_different_ind_matrix(bases, target_ind)
-        target_func = lambda order: self.find_smallest_control_set(diff_ind_matrix, order)
-        nodes = greedy_decision_tree(target_func, order_inds, False)[::-1]
-        total_cost = sum(node.cost for node in nodes)
-        order = [(node.input[-1], node.output[0]) for node in nodes]
+        target_func = lambda group_inds, _: -self.find_smallest_control_set(diff_ind_matrix, np.array(order_inds)[group_inds])
+        last_node = greedy_decision_tree([1] * len(order_inds), target_func, True, 1, False)[0]
+        all_nodes = [last_node]
+        while all_nodes[-1].parent is not None:
+            all_nodes.append(all_nodes[-1].parent)
+        total_cost = sum(node.score for node in all_nodes)
+        order = [(node.groups[-1], node.extra_output[0]) for node in all_nodes]
         return total_cost, order
 
     def get_substring(self, string: str, inds: list[int]) -> str:

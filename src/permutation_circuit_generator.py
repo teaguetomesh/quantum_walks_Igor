@@ -9,6 +9,8 @@ from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 
+from src.utilities import get_average_neighbors
+
 
 class PermutationCircuitGenerator(ABC):
     """ Class that generates permutation circuits. """
@@ -59,6 +61,8 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
                 row_inds: list[int]
                 errors_by_col: ndarray
                 sorted_col_inds: ndarray
+                movers_by_col: ndarray
+                average_degree: float
 
             def form_groups(all_bases_old: ndarray, difference: ndarray, selected_cols: list[int]) -> dict[(int, ...), Group]:
                 groups = {}
@@ -66,7 +70,12 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
                     row_inds = val.index.tolist()
                     errors_by_col = np.sum(difference[np.ix_(row_inds, selected_cols)], 0)
                     sorted_col_inds = np.argsort(errors_by_col)[::-1]
-                    groups[key] = Group(key, row_inds, errors_by_col, sorted_col_inds)
+                    movers_by_col = np.sum(difference[np.ix_(row_inds, selected_cols)] == 1, 0)
+                    mover_inds = np.zeros(all_bases_old.shape[0], dtype=bool)
+                    mover_inds[row_inds] = True
+                    mover_inds &= difference[:, selected_cols[sorted_col_inds[0]]] == 1
+                    average_degree = get_average_neighbors(all_bases_old[mover_inds, :])
+                    groups[key] = Group(key, row_inds, errors_by_col, sorted_col_inds, movers_by_col, average_degree)
                 return groups
 
             def build_swap_graph(groups: dict[(int, ...), Group]) -> DiGraph:
@@ -92,7 +101,7 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
                                 best_swap_gate = SwapGate(np.array(control_inds), transformed_coords[distinguish_ind, control_inds], target_ind, candidate_target_inds)
                         return best_swap_gate
 
-                    cx_by_num_controls = [0, 1, 6, 14, 36, 56, 80, 104]
+                    cx_by_num_controls = [0.001, 1, 6, 14, 36, 56, 80, 104]
                     if group.coords not in graph:
                         graph.add_node(group.coords, group=group)
                     for ind in range(len(group.sorted_col_inds)):
@@ -113,8 +122,9 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
                         else:
                             num_cx_gates = cx_by_num_controls[-1] + (len(swap_gate.control_inds) - len(cx_by_num_controls) - 1) * 16
                         num_cx_gates += 2 * (len(subselected_cols) - 1)
-                        weight_full_scaled = weight_full / num_cx_gates if num_cx_gates != 0 else np.inf * weight_full if weight_full != 0 else 0
-                        graph.add_edge(group.coords, destination_coords, weight=weight_full_scaled, gate=swap_gate)
+                        weight_full_scaled = weight_full / num_cx_gates
+                        num_movers_forward = np.sum(group.movers_by_col[subselected_cols])
+                        graph.add_edge(group.coords, destination_coords, weight=(weight_full_scaled, num_movers_forward, group.average_degree), gate=swap_gate)
 
                 graph = DiGraph()
                 all_coords = list(groups.keys())

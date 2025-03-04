@@ -8,8 +8,9 @@ import networkx as nx
 import numpy as np
 from networkx.classes import Graph
 from numpy import ndarray
+import numpy.random as random
 
-from src.utilities import greedy_decision_tree, array_to_str
+from src.utilities import array_to_str, get_average_neighbors
 
 
 class DensePermutationGenerator(ABC):
@@ -62,9 +63,9 @@ class HypercubePermutator(DensePermutationGenerator):
     class Hypercube:
         """ Hypercube in the state space.
         :var coords: Hypercube coordinates. Could either be 0, 1 or -1 to show the spanned dimension.
-        :var basis_inds: Indices of amplitudes from the target state that are contained within this hypercube. """
+        :var basis_inds: Indices of the states covered by this hypercube. """
         coords: ndarray
-        basis_inds: set[int]
+        basis_inds: set[int] = None
 
         def get_dimension_inds(self) -> list[int]:
             """ Returns indices of spanned dimensions. """
@@ -90,51 +91,53 @@ class HypercubePermutator(DensePermutationGenerator):
         def __lt__(self, other: SplitNode):
             return self.hcube.get_num_zero_amplitudes() > other.hcube.get_num_zero_amplitudes()
 
-    # def count_unique(self, exclude_cols: list[int], matrix: ndarray, include_rows: list[int]) -> (int, ndarray):
-    #     """ Counts number of unique rows in matrix, considering only rows specified in include_rows and not considering columns in exclude_cols.
-    #     Returns the number of unique rows and the most common pattern, where excluded columns are labelled as -1. """
-    #     include_cols = list(set(range(matrix.shape[1])) - set(exclude_cols))
-    #     remaining_matrix = matrix[np.ix_(include_rows, include_cols)]
-    #     unique_rows, counts = np.unique(remaining_matrix, axis=0, return_counts=True)
-    #     most_common_row = unique_rows[np.argmax(counts), :]
-    #     most_common_pattern = -np.ones(matrix.shape[1], dtype=int)
-    #     most_common_pattern[include_cols] = most_common_row
-    #     return unique_rows.shape[0], most_common_pattern
-    #
-    # def find_covering_hypercube(self, bases: ndarray, num_dims: int, uncovered_inds: list[int], allowed_dims: list[int]) -> Hypercube:
-    #     """ Finds a hypercube map that contains the largest number of amplitudes and has specified number of dimensions.
-    #     allowed_dims specifies which dimensions could be considered for spanning. """
-    #     target_func = lambda dims: self.count_unique(dims, bases, uncovered_inds)
-    #     nodes = greedy_decision_tree(target_func, allowed_dims, max_vals=num_dims)
-    #     hcube_coords = nodes[-1].output[0]
-    #     fixed_dims = hcube_coords != -1
-    #     covered_inds = set(np.array(uncovered_inds)[np.where(np.all(bases[np.ix_(uncovered_inds, fixed_dims)] == hcube_coords[fixed_dims], axis=1))[0]])
-    #     return self.Hypercube(hcube_coords, covered_inds)
+    def select_best_hypercube(self, hcubes: list[Hypercube], bases: ndarray, target_coords: ndarray = None) -> Hypercube:
+        """ Selects the best hypercube among the given list. """
+        best_hcubes = np.array(hcubes)
+
+        bases_covered = np.array([len(hcube.basis_inds) for hcube in hcubes])
+        max_count = max(bases_covered)
+        best_hcubes = best_hcubes[bases_covered == max_count]
+
+        if len(best_hcubes) > 1:
+            average_neighbors = []
+            for hcube in best_hcubes:
+                covered_bases = bases[list(hcube.basis_inds), :]
+                average_neighbors.append(get_average_neighbors(covered_bases))
+            max_neighbors = max(average_neighbors)
+            best_hcubes = best_hcubes[np.array(average_neighbors) == max_neighbors]
+
+        if len(best_hcubes) > 1 and target_coords is not None:
+            target_distances = np.array([np.sum(hcube.coords[hcube.coords != -1] ^ target_coords) for hcube in best_hcubes])
+            min_distance = min(target_distances)
+            best_hcubes = best_hcubes[target_distances == min_distance]
+
+        return random.choice(best_hcubes)
 
     def find_covering_hypercube(self, bases: ndarray, num_dims: int, uncovered_inds: list[int], allowed_dims: list[int], target_coords: ndarray = None) -> Hypercube:
         """ Finds a hypercube map that contains the largest number of amplitudes and has specified number of dimensions.
         allowed_dims specifies which dimensions could be considered for spanning. """
-        allowed_dims = allowed_dims[:]
-        num_fixed_dims = bases.shape[1] - num_dims
+        num_levels_ahead = 1
         fixed_dims = list(set(range(bases.shape[1])) - set(allowed_dims))
-        unique_rows, inverse, counts = np.unique(bases[np.ix_(uncovered_inds, fixed_dims)], axis=0, return_counts=True, return_inverse=True)
-        metric = [(counts[i], -np.sum(unique_rows[i, :] ^ target_coords) if target_coords is not None else 0) for i in range(len(counts))]
-        selected_ind = max(range(len(metric)), key=lambda i: metric[i])
-        fixed_vals = unique_rows[selected_ind, :].tolist()
-        covered_inds = np.array(uncovered_inds)[np.where(inverse == selected_ind)[0]]
-        while len(fixed_dims) < num_fixed_dims:
-            counts = np.zeros((2, len(allowed_dims)), dtype=int)
-            for i in range(2):
-                counts[i, :] = np.sum(bases[np.ix_(covered_inds, allowed_dims)] == i, axis=0)
-            row, col = np.unravel_index(np.argmax(counts), counts.shape)
-            next_dim = allowed_dims[col]
-            fixed_dims.append(next_dim)
-            fixed_vals.append(row)
-            covered_inds = covered_inds[bases[covered_inds, next_dim] == row]
-            allowed_dims.remove(next_dim)
-        hcube_coords = -np.ones(bases.shape[1], dtype=int)
-        hcube_coords[fixed_dims] = fixed_vals
-        return self.Hypercube(hcube_coords, set(covered_inds))
+        unique_rows, inverse = np.unique(bases[np.ix_(uncovered_inds, fixed_dims)], axis=0, return_inverse=True)
+        candidate_hcubes = []
+        for i, row in enumerate(unique_rows):
+            hcube_coords = -np.ones(bases.shape[1], dtype=int)
+            hcube_coords[fixed_dims] = row
+            covered_inds = set(np.array(uncovered_inds)[np.where(inverse == i)[0]])
+            candidate_hcubes.append(self.Hypercube(hcube_coords, covered_inds))
+        best_hcube = self.select_best_hypercube(candidate_hcubes, bases, target_coords)
+
+        while best_hcube.get_num_dimensions() > num_dims:
+            candidate_hcubes = []
+            for dim in best_hcube.get_dimension_inds():
+                for val in [0, 1]:
+                    coords = best_hcube.coords.copy()
+                    coords[dim] = val
+                    basis_inds = {ind for ind in best_hcube.basis_inds if bases[ind, dim] == val}
+                    candidate_hcubes.append(self.Hypercube(coords, basis_inds))
+            best_hcube = self.select_best_hypercube(candidate_hcubes, bases, target_coords)
+        return best_hcube
 
     def find_covering_hypercubes(self, bases: ndarray) -> SplitNode:
         """ Attempts to greedily find a set of hypercubes such that they cover all given bases, can be permuted into a dense subspace and their number is minimized.
