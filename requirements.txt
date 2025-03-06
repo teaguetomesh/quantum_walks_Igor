@@ -8,3 +8,6 @@ tqdm~=4.66.5
 python-sat~=1.8.dev13
 qiskit-aer~=0.14.0.1
 scipy~=1.13.0
+qclib~=0.1.12
+exact_cover~=1.5.0
+graycode~=1.0.5

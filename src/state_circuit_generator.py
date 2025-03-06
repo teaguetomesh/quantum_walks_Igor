@@ -12,6 +12,7 @@ from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
 
+from src.gleinig import MergeInitialize
 from src.permutation_circuit_generator import PermutationCircuitGenerator
 from src.permutation_generator import DensePermutationGenerator
 from src.qiskit_utilities import remove_leading_cx_gates
@@ -27,6 +28,15 @@ class StateCircuitGenerator(ABC):
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
         """ Generates a quantum circuit that prepares target_state, described as dictionary of bitstrings and corresponding probability amplitudes. """
         pass
+
+
+class MergingStatesGenerator(StateCircuitGenerator):
+    """ Generates state preparation circuits via merging states method of Gleinig. """
+
+    def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
+        merger = MergeInitialize(target_state)
+        circuit = merger._define_initialize()
+        return circuit
 
 
 class QiskitDefaultGenerator(StateCircuitGenerator):

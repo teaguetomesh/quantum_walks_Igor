@@ -92,10 +92,10 @@ def generate_state(all_clusters: list[ndarray]) -> dict[str, complex]:
 
 def generate_cluster_states():
     num_states = 100
-    num_qubits = 8
+    num_qubits = 10
     num_qubits_dense = 5
     num_clusters = 32
-    out_path = f'data_2/clusters_{num_clusters}/states.pkl'
+    out_path = f'data_2/qubits_{num_qubits}/dense_{num_qubits_dense}/clusters_{num_clusters}/states.pkl'
 
     states = []
     for i in range(num_states):

@@ -91,6 +91,11 @@ class HypercubePermutator(DensePermutationGenerator):
         def __lt__(self, other: SplitNode):
             return self.hcube.get_num_zero_amplitudes() > other.hcube.get_num_zero_amplitudes()
 
+        def get_height(self):
+            if self.children is None:
+                return 1
+            return 1 + max(self.children[0].get_height(), self.children[1].get_height())
+
     def select_best_hypercube(self, hcubes: list[Hypercube], bases: ndarray, target_coords: ndarray = None) -> Hypercube:
         """ Selects the best hypercube among the given list. """
         best_hcubes = np.array(hcubes)
@@ -117,7 +122,6 @@ class HypercubePermutator(DensePermutationGenerator):
     def find_covering_hypercube(self, bases: ndarray, num_dims: int, uncovered_inds: list[int], allowed_dims: list[int], target_coords: ndarray = None) -> Hypercube:
         """ Finds a hypercube map that contains the largest number of amplitudes and has specified number of dimensions.
         allowed_dims specifies which dimensions could be considered for spanning. """
-        num_levels_ahead = 1
         fixed_dims = list(set(range(bases.shape[1])) - set(allowed_dims))
         unique_rows, inverse = np.unique(bases[np.ix_(uncovered_inds, fixed_dims)], axis=0, return_inverse=True)
         candidate_hcubes = []
@@ -189,6 +193,11 @@ class HypercubePermutator(DensePermutationGenerator):
                 permutations.append(self.extract_permutation(child, bases, child_target_coords))
             permutation = permutations[0] | permutations[1]
         return permutation
+
+    def get_all_movable_leaves(self, root: SplitNode, covered_inds: set[int]) -> list[SplitNode]:
+        if root.children is None:
+            return [root] if next(iter(root.hcube.basis_inds)) not in covered_inds else []
+        return self.get_all_movable_leaves(root.children[0], covered_inds) + self.get_all_movable_leaves(root.children[1], covered_inds)
 
     def get_permutation(self, state: dict[str, complex]) -> (dict[str, str], list[int]):
         all_bases = np.array([[int(val) for val in basis] for basis in state])
