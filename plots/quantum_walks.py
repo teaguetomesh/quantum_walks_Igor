@@ -4,23 +4,20 @@ from typing import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import scipy.stats as stats
 from matplotlib.lines import Line2D
 
 from general import Line, plot_general, save_figure
+from src.utilities import get_error_margin
 
 
 def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num_amplitudes: Sequence[int], color_ind: int, marker_ind: int, label: str, figure_id: int):
-    confidence = 0.95
-    z_val = stats.norm.ppf((1 + confidence) / 2)
-
     ys = []
     error_margins = []
     for n, m in zip(num_qubits, num_amplitudes):
         data_path = f"../data/qubits_{n}/m_{m}/cx_counts.csv"
         df = pd.read_csv(data_path)
         ys.append(np.mean(df[method]))
-        error_margins.append(z_val * np.std(df[method], ddof=1) / len(df[method]) ** 0.5)
+        error_margins.append(get_error_margin(df[method]))
 
     line = Line(num_qubits, ys, error_margins=error_margins, color=color_ind, marker=marker_ind, label=label)
     plot_general([line], ("n", "CX"), boundaries=(4.75, 11.25, 10, 10 ** 4), figure_id=figure_id)

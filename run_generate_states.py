@@ -3,6 +3,7 @@ import os
 import pickle
 import random
 from collections import deque
+from itertools import product
 
 import numpy as np
 import numpy.random as rnd
@@ -90,7 +91,8 @@ def generate_state(all_clusters: list[ndarray]) -> dict[str, complex]:
     return state
 
 
-def generate_cluster_states():
+def generate_cluster_states_consistent():
+    """ Generates cluster states where cluster dimensions are random, but consistent, i.e. assemblable into a dense hypercube without rotation. """
     num_states = 100
     num_qubits = 10
     num_qubits_dense = 5
@@ -110,5 +112,67 @@ def generate_cluster_states():
         pickle.dump(states, f)
 
 
+def generate_cluster_states_same():
+    """ Generates cluster states where cluster dimensions are the same for all clusters of any state. """
+    num_states = 100
+    num_qubits_all = [10]
+    num_qubits_dense_all = [5]
+    num_clusters_all = [2, 4, 8, 16, 32]
+
+    generator = np.random.default_rng()
+    iterable = list(product(num_qubits_all, num_qubits_dense_all, num_clusters_all))
+    for num_qubits, num_qubits_dense, num_clusters in iterable:
+        print(f'Qubits: {num_qubits}, Dense: {num_qubits_dense}, Clusters: {num_clusters}')
+        out_path = f'data_3/qubits_{num_qubits}/dense_{num_qubits_dense}/clusters_{num_clusters}/states.pkl'
+        states = []
+        for i in range(num_states):
+            num_cluster_dims = int(np.log2(2 ** num_qubits_dense / num_clusters))
+            cluster_dims = generator.choice(num_qubits, num_cluster_dims, replace=False, shuffle=False)
+            clusters = []
+            for j in range(num_clusters):
+                while True:
+                    next_cluster = generator.choice(2, num_qubits)
+                    next_cluster[cluster_dims] = -1
+                    if not any([np.all(cluster == next_cluster) for cluster in clusters]):
+                        break
+                clusters.append(next_cluster)
+            states.append(generate_state(clusters))
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "wb") as f:
+            pickle.dump(states, f)
+
+
+def generate_cluster_states_random():
+    """ Generates cluster states where cluster dimensions are chosen randomly. """
+    num_states = 100
+    num_qubits_all = [10]
+    num_qubits_dense_all = [5]
+    num_clusters_all = [2, 4, 8, 16, 32]
+
+    generator = np.random.default_rng()
+    iterable = list(product(num_qubits_all, num_qubits_dense_all, num_clusters_all))
+    for num_qubits, num_qubits_dense, num_clusters in iterable:
+        print(f'Qubits: {num_qubits}, Dense: {num_qubits_dense}, Clusters: {num_clusters}')
+        out_path = f'data_4/qubits_{num_qubits}/dense_{num_qubits_dense}/clusters_{num_clusters}/states.pkl'
+        states = []
+        for i in range(num_states):
+            num_cluster_dims = int(np.log2(2 ** num_qubits_dense / num_clusters))
+            clusters = []
+            for j in range(num_clusters):
+                while True:
+                    cluster_dims = generator.choice(num_qubits, num_cluster_dims, replace=False, shuffle=False)
+                    next_cluster = generator.choice(2, num_qubits)
+                    next_cluster[cluster_dims] = -1
+                    if not any([clusters_overlap(cluster, next_cluster) for cluster in clusters]):
+                        break
+                clusters.append(next_cluster)
+            states.append(generate_state(clusters))
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "wb") as f:
+            pickle.dump(states, f)
+
+
 if __name__ == "__main__":
-    generate_cluster_states()
+    generate_cluster_states_random()

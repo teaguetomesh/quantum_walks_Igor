@@ -36,7 +36,7 @@ class MergingStatesGenerator(StateCircuitGenerator):
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
         merger = MergeInitialize(target_state)
         circuit = merger._define_initialize()
-        return circuit
+        return circuit.reverse_bits()
 
 
 class QiskitDefaultGenerator(StateCircuitGenerator):

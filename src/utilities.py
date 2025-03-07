@@ -11,6 +11,12 @@ from typing import Sequence
 
 import numpy as np
 from numpy import ndarray
+from scipy import stats
+
+
+def get_error_margin(data: Sequence, confidence: float = 0.95) -> float:
+    z_val = stats.norm.ppf((1 + confidence) / 2)
+    return z_val * np.std(data, ddof=1) / len(data) ** 0.5
 
 
 def get_average_neighbors(bases: ndarray) -> float:

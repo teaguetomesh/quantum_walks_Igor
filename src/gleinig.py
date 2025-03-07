@@ -85,29 +85,29 @@ class MergeInitialize(InitializeSparse):
             idx2 = self.transformed_basis.index(bitstr2)
             self.path.append([self.original_basis[idx1], self.original_basis[idx2]])
 
-            print("transformed basis: ", self.transformed_basis)
+            # print("transformed basis: ", self.transformed_basis)
 
         b_string = b_strings.pop()
         for (bit_idx, bit) in enumerate(b_string):
             if bit == "1":
                 quantum_circuit.x(bit_idx)
 
-        bases = list(reversed(self.path))
-        print(bases)
+        # bases = list(reversed(self.path))
+        # print(bases)
         # fig = plt.figure()
-        graph = Graph()
-        for pair in bases:
-            val = sum([b1 != b2 for b1, b2 in zip(pair[0], pair[1])])
-            graph.add_edge(pair[0], pair[1], weight=val)
-        graph.graph["start"] = bases[0][0]
-        labels = nx.get_edge_attributes(graph, 'weight')
-        pos = nx.spring_layout(graph)
-        nx.draw(graph, pos, with_labels=True, node_color="lightblue")
-        nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
+        # graph = Graph()
+        # for pair in bases:
+        #     val = sum([b1 != b2 for b1, b2 in zip(pair[0], pair[1])])
+        #     graph.add_edge(pair[0], pair[1], weight=val)
+        # graph.graph["start"] = bases[0][0]
+        # labels = nx.get_edge_attributes(graph, 'weight')
+        # pos = nx.spring_layout(graph)
+        # nx.draw(graph, pos, with_labels=True, node_color="lightblue")
+        # nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
 
         # Save the figure to a file
-        plt.pyplot.savefig(f"graph_{bases[0]}.png")
-        plt.pyplot.clf()
+        # plt.pyplot.savefig(f"graph_{bases[0]}.png")
+        # plt.pyplot.clf()
         # quantum_circuit.reverse_ops().draw(output="mpl", fold=-1, filename=f"gleinig_{bases[0]}.jpg")
 
         return quantum_circuit.reverse_ops()
