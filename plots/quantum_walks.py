@@ -7,7 +7,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 
 from general import Line, plot_general, save_figure
-from src.utilities import get_error_margin
+from src.utilities.general import get_error_margin
 
 
 def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num_amplitudes: Sequence[int], color_ind: int, marker_ind: int, label: str, figure_id: int):

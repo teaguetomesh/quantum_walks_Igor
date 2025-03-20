@@ -9,12 +9,13 @@ import pandas as pd
 from qiskit import transpile
 from tqdm import tqdm
 
-from src.permutation_circuit_generator import PermutationCircuitGeneratorSparse
+from src.utilities.qiskit_utilities import remove_leading_cx_gates
+
+from src.permutation_circuit_generator import PermutationCircuitGeneratorSparse, PermutationCircuitGeneratorSparseNaive
 from src.permutation_generator import HypercubePermutator
-from src.qiskit_utilities import remove_leading_cx_gates
-from src.quantum_walks import PathFinderSHP
-from src.state_circuit_generator import StateCircuitGenerator, QiskitDenseGenerator, SingleEdgeGenerator, QiskitDefaultGenerator, MergingStatesGenerator
-from src.utilities import make_dict, get_average_neighbors
+from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, QiskitDenseGenerator
+from src.utilities.general import make_dict
+from src.utilities.quantum import get_average_neighbors
 from src.validation import execute_circuit, get_state_vector, get_fidelity
 
 
@@ -48,15 +49,19 @@ def merge_state_files():
 
 
 def calculate_average_degree():
-    num_qubits = [10]
-    num_qubits_dense = [5]
-    num_clusters = [2, 4, 8, 16, 32]
+    num_qubits = [5, 6, 7, 8, 9, 10, 11, 12]
+    num_qubits_dense = [7]
+    num_clusters = [2, 4, 8, 16, 32, 64, 128]
+    num_amplitudes = num_qubits
     out_col_name = 'average_degree'
+    data_folder_parent = 'data'
 
-    iterable = list(product(num_qubits, num_qubits_dense, num_clusters))
+    # iterable = list(product(num_qubits, num_qubits_dense, num_clusters))
+    iterable = list(zip(num_qubits, num_amplitudes))
     for item in iterable:
         print(f'Current iterable: {item}')
-        data_folder = f'data_4/qubits_{item[0]}/dense_{item[1]}/clusters_{item[2]}'
+        # data_folder = f'{data_folder_parent}/qubits_{item[0]}/dense_{item[1]}/clusters_{item[2]}'
+        data_folder = f'{data_folder_parent}/qubits_{item[0]}/m_{item[1]}/'
         states_file_path = os.path.join(data_folder, 'states.pkl')
         with open(states_file_path, 'rb') as f:
             state_list = pickle.load(f)
@@ -80,14 +85,16 @@ def run_prepare_state():
     # circuit_generator = QiskitDefaultGenerator()
     # circuit_generator = SingleEdgeGenerator(path_finder=PathFinderSHP(), reduce_controls=True, remove_leading_cx=True, add_barriers=False)
     # circuit_generator = MergingStatesGenerator()
-    circuit_generator = QiskitDenseGenerator(permutation_generator=HypercubePermutator(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    # circuit_generator = QiskitDenseGenerator(permutation_generator=HypercubePermutator(), permutation_circuit_generator=PermutationCircuitGeneratorSparse())
+    circuit_generator = QiskitDenseGenerator(permutation_generator=HypercubePermutator(), permutation_circuit_generator=PermutationCircuitGeneratorSparseNaive())
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits = [10]
-    num_qubits_dense = [5]
-    num_clusters = [2, 4, 8, 16, 32]
+    num_qubits = [12]
+    num_qubits_dense = [7]
+    num_clusters = [2, 4, 8, 16, 32, 64, 128]
     # num_clusters = [2]
-    out_col_name = 'qiskit_dense'
+    out_col_name = 'pairwise_swap'
+    data_folder_parent = 'data_3'
     num_workers = 12
     check_fidelity = True
     optimization_level = 3
@@ -97,8 +104,7 @@ def run_prepare_state():
     iterable = list(product(num_qubits, num_qubits_dense, num_clusters))
     for item in iterable:
         print(f'Current iterable: {item}')
-        # data_folder = f'data/qubits_{item[0]}/m_{item[2]}'
-        data_folder = f'data_4/qubits_{item[0]}/dense_{item[1]}/clusters_{item[2]}'
+        data_folder = f'{data_folder_parent}/qubits_{item[0]}/dense_{item[1]}/clusters_{item[2]}'
         states_file_path = os.path.join(data_folder, 'states.pkl')
         with open(states_file_path, 'rb') as f:
             state_list = pickle.load(f)

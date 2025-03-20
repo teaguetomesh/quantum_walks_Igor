@@ -115,9 +115,9 @@ def generate_cluster_states_consistent():
 def generate_cluster_states_same():
     """ Generates cluster states where cluster dimensions are the same for all clusters of any state. """
     num_states = 100
-    num_qubits_all = [10]
-    num_qubits_dense_all = [5]
-    num_clusters_all = [2, 4, 8, 16, 32]
+    num_qubits_dense_all = [7]
+    num_qubits_all = [12]
+    num_clusters_all = [2, 4, 8, 16, 32, 64, 128]
 
     generator = np.random.default_rng()
     iterable = list(product(num_qubits_all, num_qubits_dense_all, num_clusters_all))
@@ -175,4 +175,4 @@ def generate_cluster_states_random():
 
 
 if __name__ == "__main__":
-    generate_cluster_states_random()
+    generate_cluster_states_same()

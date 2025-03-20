@@ -9,7 +9,8 @@ from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 
-from src.utilities import get_average_neighbors
+from src.utilities.general import array_to_str
+from src.utilities.quantum import get_average_neighbors, get_different_inds, find_min_control_set_2, get_cx_cost_cx
 
 
 class PermutationCircuitGenerator(ABC):
@@ -19,6 +20,19 @@ class PermutationCircuitGenerator(ABC):
     def get_permutation_circuit(self, permutation: dict[str, str]) -> QuantumCircuit:
         """ Generates a permutation circuit for a permutation given as an old basis -> new basis mapping. """
         pass
+
+    def build_cx_mcx_pattern(self, quantum_circuit: QuantumCircuit, cx_control_ind: int, cx_target_inds: ndarray, mcx_control_inds: ndarray, mcx_control_vals: ndarray):
+        """ Builds the pattern of a specified MCX gate conjugated with specified set of CX gates. 0th qubit is used as ancilla for MCX. """
+        shift = 1
+        conjugation_qc = QuantumCircuit(quantum_circuit.num_qubits)
+        for ind in cx_target_inds:
+            conjugation_qc.cx(cx_control_ind + shift, ind + shift)
+        quantum_circuit.compose(conjugation_qc, inplace=True)
+        mcx_control_inds = list(mcx_control_inds + shift)
+        mcx_control_vals = array_to_str(mcx_control_vals)
+        mcx_target_ind = cx_control_ind + shift
+        quantum_circuit.mcx(mcx_control_inds, mcx_target_ind, 0, 'recursion', mcx_control_vals[::-1])
+        quantum_circuit.compose(conjugation_qc.reverse_ops(), inplace=True)
 
 
 class PermutationCircuitGeneratorQiskit(PermutationCircuitGenerator):
@@ -36,8 +50,26 @@ class PermutationCircuitGeneratorQiskit(PermutationCircuitGenerator):
         return qc
 
 
+class PermutationCircuitGeneratorSparseNaive(PermutationCircuitGenerator):
+    """ Generates permutation circuit made up of pairwise swaps. """
+
+    def get_permutation_circuit(self, permutation: dict[str, str]) -> QuantumCircuit:
+        existing_states = np.array([list(map(int, key)) for key in permutation])
+        target_states = np.array([list(map(int, val)) for val in permutation.values()])
+        qc = QuantumCircuit(existing_states.shape[1] + 1)
+        for i in range(existing_states.shape[0]):
+            if np.all(existing_states[i, :] == target_states[i, :]):
+                continue
+            diff_inds = np.where(existing_states[i, :] != target_states[i, :])[0]
+            control_inds, control_vals, interaction_ind = find_min_control_set_2(existing_states, i, diff_inds)
+            cx_target_inds = diff_inds[diff_inds != interaction_ind]
+            self.build_cx_mcx_pattern(qc, interaction_ind, cx_target_inds, control_inds, control_vals)
+            existing_states[i, :] = target_states[i, :]
+        return qc.reverse_bits()
+
+
 class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
-    """ Uses manual CX composition for sparse state permutations. """
+    """ Generates permutation circuit that takes into account group permutations. """
 
     def get_permutation_circuit(self, permutation: dict[str, str]) -> QuantumCircuit:
         @dataclass
@@ -81,27 +113,9 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
             def build_swap_graph(groups: dict[(int, ...), Group]) -> DiGraph:
                 def update_group_location(group: Group, all_coords: list[(int, ...)], graph: DiGraph):
                     def find_best_swap_gate(all_coords: list[(int, ...)], distinguish_ind: int, candidate_target_inds: ndarray) -> SwapGate:
-                        def get_diff_inds(coords1: (int, ...), coords2: (int, ...), exclude_ind: int):
-                            diff_inds = [ind for ind in range(len(coords1)) if ind != exclude_ind and coords1[ind] != coords2[ind]]
-                            return diff_inds
+                        control_inds, control_vals, interaction_ind = find_min_control_set_2(all_coords, distinguish_ind, candidate_target_inds)
+                        return SwapGate(control_inds, control_vals, interaction_ind, candidate_target_inds)
 
-                        best_swap_gate = None
-                        for target_ind in candidate_target_inds:
-                            transformed_coords = np.array(all_coords)
-                            secondary_target_inds = [ind for ind in candidate_target_inds if ind != target_ind]
-                            transformed_coords[np.ix_(transformed_coords[:, target_ind] == 1, secondary_target_inds)] ^= 1
-                            hitman = Hitman()
-                            for coords in transformed_coords:
-                                diff_inds = get_diff_inds(coords, transformed_coords[distinguish_ind], target_ind)
-                                if len(diff_inds) == 0:
-                                    continue
-                                hitman.hit(diff_inds)
-                            control_inds = hitman.get()
-                            if best_swap_gate is None or len(best_swap_gate.control_inds) > len(control_inds):
-                                best_swap_gate = SwapGate(np.array(control_inds), transformed_coords[distinguish_ind, control_inds], target_ind, candidate_target_inds)
-                        return best_swap_gate
-
-                    cx_by_num_controls = [0.001, 1, 6, 14, 36, 56, 80, 104]
                     if group.coords not in graph:
                         graph.add_node(group.coords, group=group)
                     for ind in range(len(group.sorted_col_inds)):
@@ -117,10 +131,9 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
                         weight_full = weight_forward + weight_backward
                         group_ind = all_coords.index(group.coords)
                         swap_gate = find_best_swap_gate(all_coords, group_ind, subselected_cols)
-                        if len(swap_gate.control_inds) < len(cx_by_num_controls):
-                            num_cx_gates = cx_by_num_controls[len(swap_gate.control_inds)]
-                        else:
-                            num_cx_gates = cx_by_num_controls[-1] + (len(swap_gate.control_inds) - len(cx_by_num_controls) - 1) * 16
+                        num_cx_gates = get_cx_cost_cx(len(swap_gate.control_inds))
+                        if num_cx_gates == 0:
+                            num_cx_gates = 0.001
                         num_cx_gates += 2 * (len(subselected_cols) - 1)
                         weight_full_scaled = weight_full / num_cx_gates
                         num_movers_forward = np.sum(group.movers_by_col[subselected_cols])
@@ -158,17 +171,11 @@ class PermutationCircuitGeneratorSparse(PermutationCircuitGenerator):
             if len(swap.gate.control_inds) == 0:
                 qc.x(selected_cols[swap.gate.target_ind] + num_ancillas)
             else:
-                conjugation_qc = QuantumCircuit(qc.num_qubits)
-                for ind in swap.gate.conjugated_target_inds:
-                    if ind == swap.gate.target_ind:
-                        continue
-                    conjugation_qc.cx(selected_cols[swap.gate.target_ind] + num_ancillas, selected_cols[ind] + num_ancillas)
-                qc.compose(conjugation_qc, inplace=True)
-                control_inds = list(selected_cols[swap.gate.control_inds] + num_ancillas)
-                control_vals = ''.join([str(val) for val in swap.gate.control_vals])
-                target_ind = selected_cols[swap.gate.target_ind] + num_ancillas
-                qc.mcx(control_inds, target_ind, 0, 'recursion', control_vals[::-1])
-                qc.compose(conjugation_qc.reverse_ops(), inplace=True)
+                cx_control_ind = selected_cols[swap.gate.target_ind]
+                cx_target_inds = selected_cols[swap.gate.conjugated_target_inds[swap.gate.conjugated_target_inds != cx_control_ind]]
+                mcx_control_inds = selected_cols[swap.gate.control_inds]
+                mcx_control_vals = swap.gate.control_vals
+                self.build_cx_mcx_pattern(qc, cx_control_ind, cx_target_inds, mcx_control_inds, mcx_control_vals)
             all_bases_old[np.ix_(swap.row_inds, selected_cols[swap.gate.conjugated_target_inds])] ^= 1
             difference[np.ix_(swap.row_inds, selected_cols[swap.gate.conjugated_target_inds])] *= -1
 

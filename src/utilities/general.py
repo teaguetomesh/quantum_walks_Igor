@@ -1,34 +1,15 @@
-""" Shared functions. """
+""" General utilities. """
 from __future__ import annotations
 
 import ast
 import inspect
-import itertools
 import textwrap
 import traceback
 from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
-from numpy import ndarray
 from scipy import stats
-
-
-def get_error_margin(data: Sequence, confidence: float = 0.95) -> float:
-    z_val = stats.norm.ppf((1 + confidence) / 2)
-    return z_val * np.std(data, ddof=1) / len(data) ** 0.5
-
-
-def get_average_neighbors(bases: ndarray) -> float:
-    """ Returns average number of neighbor bases in the given array of bases. """
-    if bases.shape[0] == 0:
-        return 0
-
-    neighbors = 0
-    for basis1, basis2 in itertools.combinations(bases, 2):
-        if np.sum(basis1 != basis2) == 1:
-            neighbors += 2
-    return neighbors / bases.shape[0]
 
 
 @dataclass
@@ -86,6 +67,11 @@ def greedy_decision_tree(group_sizes: list[int], target_func: callable, ordered:
         last_layer = best_node.parent.children
         last_layer = calculate_next_layer(last_layer)
     return [node for node in last_layer if node.score == best_node.score]
+
+
+def get_error_margin(data: Sequence, confidence: float = 0.95) -> float:
+    z_val = stats.norm.ppf((1 + confidence) / 2)
+    return z_val * np.std(data, ddof=1) / len(data) ** 0.5
 
 
 def array_to_str(arr: Sequence) -> str:

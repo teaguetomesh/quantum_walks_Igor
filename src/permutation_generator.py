@@ -10,7 +10,8 @@ from networkx.classes import Graph
 from numpy import ndarray
 import numpy.random as random
 
-from src.utilities import array_to_str, get_average_neighbors
+from src.utilities.general import array_to_str
+from src.utilities.quantum import get_average_neighbors
 
 
 class DensePermutationGenerator(ABC):

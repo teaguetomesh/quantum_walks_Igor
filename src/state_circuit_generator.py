@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy import ndarray
-from pysat.examples.hitman import Hitman
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
@@ -15,10 +14,11 @@ from qiskit.quantum_info import Statevector
 from src.gleinig import MergeInitialize
 from src.permutation_circuit_generator import PermutationCircuitGenerator
 from src.permutation_generator import DensePermutationGenerator
-from src.qiskit_utilities import remove_leading_cx_gates
+from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathSegment, PathFinder
-from src.utilities import greedy_decision_tree
+from src.utilities.general import greedy_decision_tree, array_to_str
 from src.validation import get_state_vector
+from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds
 
 
 class StateCircuitGenerator(ABC):
@@ -64,34 +64,6 @@ class SingleEdgeGenerator(StateCircuitGenerator):
     remove_leading_cx: bool = True
     add_barriers: bool = False
 
-    @staticmethod
-    def update_visited(visited: list[list[int]], control: int, target: int):
-        """
-        Updates visited nodes to reflect the action of specified CX gates.
-        :param visited: List of basis labels of visited states.
-        :param control: Index of the control qubit for the CX operation.
-        :param target: Index of the target qubit for the CX operation.
-        """
-        for label in visited:
-            if label[control] == 1:
-                label[target] = 1 - label[target]
-
-    @staticmethod
-    def find_min_control_set(existing_states: list[list[int]], target_state_ind: int, interaction_ind: int) -> list[int]:
-        """
-        Finds minimum set of control necessary to select the target state.
-        :param existing_states: List of states with non-zero amplitudes.
-        :param target_state_ind: Index of the target state in the existing_states.
-        :param interaction_ind: Index of target qubit for the controlled operation (to exclude from consideration for the control set).
-        :return: Minimum set of control indices necessary to select the target state.
-        """
-        get_diff_inds = lambda state1, state2: [ind for ind in range(len(state1)) if ind != interaction_ind and state1[ind] != state2[ind]]
-        difference_inds = [get_diff_inds(state, existing_states[target_state_ind]) for state_ind, state in enumerate(existing_states) if state_ind != target_state_ind]
-        hitman = Hitman()
-        for inds_set in difference_inds:
-            hitman.hit(inds_set)
-        return hitman.get()
-
     def convert_path_to_circuit(self, path: list[PathSegment]) -> QuantumCircuit:
         """
         Converts quantum walks to qiskit circuit.
@@ -113,20 +85,17 @@ class SingleEdgeGenerator(StateCircuitGenerator):
             diff_inds = np.where(np.array(origin) != np.array(destination))[0]
             interaction_ind = diff_inds[0]
 
-            visited_transformed = copy.deepcopy(visited)
+            visited_transformed = np.array(visited)
             for ind in diff_inds[1:]:
                 qc.cx(interaction_ind, ind)
-                SingleEdgeGenerator.update_visited(visited_transformed, interaction_ind, ind)
+                visited_transformed[visited_transformed[:, interaction_ind] == 1, ind] ^= 1
 
             origin_ind = visited.index(origin)
             if self.reduce_controls:
-                control_indices = SingleEdgeGenerator.find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+                control_indices = find_min_control_set(visited_transformed, origin_ind, interaction_ind)
             else:
                 control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
-
-            for ind in control_indices:
-                if visited_transformed[origin_ind][ind] == 0:
-                    qc.x(ind)
+            control_vals = array_to_str(visited_transformed[origin_ind, control_indices])
 
             rz_angle = 2 * segment.phase_time
             if origin[interaction_ind] == 1:
@@ -134,20 +103,16 @@ class SingleEdgeGenerator(StateCircuitGenerator):
             if rz_angle != 0:
                 rz_gate = RZGate(rz_angle)
                 if len(control_indices) > 0:
-                    rz_gate = rz_gate.control(len(control_indices))
+                    rz_gate = rz_gate.control(len(control_indices), ctrl_state=control_vals[::-1])
                 qc.append(rz_gate, control_indices + [interaction_ind])
 
             rx_angle = 2 * segment.amplitude_time
             if rx_angle != 0:
                 rx_gate = RXGate(rx_angle)
                 if len(control_indices) > 0:
-                    rx_gate = rx_gate.control(len(control_indices))
+                    rx_gate = rx_gate.control(len(control_indices), ctrl_state=control_vals[::-1])
                 qc.append(rx_gate, control_indices + [interaction_ind])
                 visited.append(destination)
-
-            for ind in control_indices:
-                if visited_transformed[origin_ind][ind] == 0:
-                    qc.x(ind)
 
             for ind in reversed(diff_inds[1:]):
                 qc.cx(interaction_ind, ind)
@@ -156,7 +121,6 @@ class SingleEdgeGenerator(StateCircuitGenerator):
 
         if self.remove_leading_cx:
             qc = remove_leading_cx_gates(qc)
-
         return qc.reverse_bits()
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
@@ -373,49 +337,29 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
         for edge in edges:
             edge.transformed_bases = tuple(self.change_basis_if(basis, change_inds, target_ind) if basis is not None else None for basis in edge.bases)
 
-    def get_different_inds(self, basis_1: str, basis_2: str, ignore_ind: int) -> list[int]:
-        """ Returns different indices between two bases, ignoring ignore_ind. """
-        return [ind for ind in range(len(basis_1)) if ind != ignore_ind and basis_1[ind] != basis_2[ind]]
-
     def calculate_different_ind_matrix(self, bases: list[str], ignore_ind: int) -> ndarray[list[int]]:
         """ Calculates a matrix where element [i, j] is a list of different indices between i-th and j-th bases, except ignore_ind. """
         diff_ind_matrix = np.empty((len(bases), len(bases)), dtype=object)
         for i in range(diff_ind_matrix.shape[0]):
             for j in range(i, diff_ind_matrix.shape[1]):
-                diff_ind_matrix[i, j] = diff_ind_matrix[j, i] = self.get_different_inds(bases[i], bases[j], ignore_ind)
+                diff_ind_matrix[i, j] = diff_ind_matrix[j, i] = get_different_inds(bases[i], bases[j], ignore_ind)
         return diff_ind_matrix
 
-    def solve_minimum_hitting_set(self, sets: list[list[int]]) -> list[int]:
-        """ Finds the smallest set of integers that overlaps with all given sets. """
-        hitman = Hitman()
-        for set in sets:
-            hitman.hit(set)
-        solution = hitman.get()
-        return solution
-
-    def get_cx_cost(self, num_controls: int) -> int:
-        """ Returns the number of CX gates in the decomposition of multi-controlled Rx gate with the specified number of controls. """
-        cx_by_num_controls = [0, 2, 8, 20, 24, 40, 56, 80, 104]
-        if num_controls < len(cx_by_num_controls):
-            return cx_by_num_controls[num_controls]
-        else:
-            return cx_by_num_controls[-1] + (num_controls - len(cx_by_num_controls) - 1) * 16
-
-    def find_smallest_control_set(self, diff_ind_matrix: ndarray[list[int]], ignore_inds: list[int]) -> (int, list[int]):
+    def find_smallest_control_set_matrix(self, diff_ind_matrix: ndarray[list[int]], ignore_inds: list[int]) -> (int, list[int]):
         """ Returns the smallest control set necessary to distinguish a state given by the last index in ignore_inds from other states. """
         sets = []
         for col_ind, diff_inds in enumerate(diff_ind_matrix[ignore_inds[-1], :]):
             if col_ind in ignore_inds:
                 continue
             sets.append(diff_inds)
-        control_inds = self.solve_minimum_hitting_set(sets)
-        cost = self.get_cx_cost(len(control_inds))
+        control_inds = solve_minimum_hitting_set(sets)
+        cost = get_cx_cost_rx(len(control_inds))
         return cost, control_inds
 
     def find_implementation_order(self, bases: list[str], target_ind: int, order_inds: list[int]) -> (int, list[(int, list[int])]):
         """ Finds the best order to implement a given set of bases (based on control reduction) with given target ind and rx_dims. """
         diff_ind_matrix = self.calculate_different_ind_matrix(bases, target_ind)
-        target_func = lambda group_inds, _: -self.find_smallest_control_set(diff_ind_matrix, np.array(order_inds)[group_inds])
+        target_func = lambda group_inds, _: -self.find_smallest_control_set_matrix(diff_ind_matrix, np.array(order_inds)[group_inds])
         last_node = greedy_decision_tree([1] * len(order_inds), target_func, True, 1, False)[0]
         all_nodes = [last_node]
         while all_nodes[-1].parent is not None:
