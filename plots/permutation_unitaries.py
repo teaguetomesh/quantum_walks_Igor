@@ -9,7 +9,7 @@ from src.utilities.general import get_error_margin
 
 def plot_cx_count_vs_clusters():
     methods = ['qiskit_dense', 'pairwise_swap', 'merging_states', 'qiskit']
-    labels = ['Bulk Swaps', 'Pairwise Swaps', 'Merging States', 'Qiskit']
+    labels = ['Cluster Swaps', 'Pairwise Swaps', 'Merging States', 'Qiskit']
     num_qubits_all = [10, 11, 12]
     num_qubits_dense_all = [5, 6, 7]
     num_clusters_all = [2, 4, 8, 16, 32, 64, 128]
