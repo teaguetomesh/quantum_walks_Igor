@@ -1,24 +1,11 @@
 """ Quantum-related utilities """
 from __future__ import annotations
 
-import itertools
 from typing import Sequence
 
 import numpy as np
 from numpy import ndarray
 from pysat.examples.hitman import Hitman
-
-
-def get_average_neighbors(bases: ndarray) -> float:
-    """ Returns average number of neighbor bases in the given array of bases. """
-    if bases.shape[0] == 0:
-        return 0
-
-    neighbors = 0
-    for basis1, basis2 in itertools.combinations(bases, 2):
-        if np.sum(basis1 != basis2) == 1:
-            neighbors += 2
-    return neighbors / bases.shape[0]
 
 
 def get_different_inds(basis_1: Sequence, basis_2: Sequence, ignore_ind: int) -> list[int]:
@@ -37,14 +24,16 @@ def solve_minimum_hitting_set(sets: list[list[int]]) -> list[int]:
 
 def find_min_control_set(existing_states: list[list[int]] | ndarray, target_state_ind: int, interaction_ind: int) -> list[int]:
     """
-    Finds minimum set of control necessary to select the target state.
+    Finds minimum set of control necessary to select the target state and its destination interacting via interaction_ind.
     :param existing_states: List of states with non-zero amplitudes.
     :param target_state_ind: Index of the target state in the existing_states.
     :param interaction_ind: Index of target qubit for the controlled operation (to exclude from consideration for the control set).
     :return: Minimum set of control indices necessary to select the target state.
     """
-    different_inds = \
-        [get_different_inds(state, existing_states[target_state_ind], interaction_ind) for state_ind, state in enumerate(existing_states) if state_ind != target_state_ind]
+    origin = existing_states[target_state_ind, :]
+    destination = origin.copy()
+    destination[interaction_ind] ^= 1
+    different_inds = [get_different_inds(state, origin, interaction_ind) for state in existing_states if not (np.all(state == origin) or np.all(state == destination))]
     return solve_minimum_hitting_set(different_inds)
 
 
@@ -66,15 +55,6 @@ def find_min_control_set_2(existing_states: list[list[int]] | ndarray, target_st
 def get_cx_cost_rx(num_controls: int) -> int:
     """ Returns the number of CX gates in the decomposition of multi-controlled Rx gate with the specified number of controls. """
     cx_by_num_controls = [0, 2, 8, 20, 24, 40, 56, 80, 104]
-    if num_controls < len(cx_by_num_controls):
-        return cx_by_num_controls[num_controls]
-    else:
-        return cx_by_num_controls[-1] + (num_controls - len(cx_by_num_controls) - 1) * 16
-
-
-def get_cx_cost_cx(num_controls: int) -> int:
-    """ Returns the number of CX gates in the decomposition of multi-controlled Rx gate with the specified number of controls. """
-    cx_by_num_controls = [0, 1, 6, 14, 36, 56, 80, 104]
     if num_controls < len(cx_by_num_controls):
         return cx_by_num_controls[num_controls]
     else:

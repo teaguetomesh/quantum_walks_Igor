@@ -64,17 +64,8 @@ def data_matrix_to_lines(data: ndarray, line_labels: list[str] = None, colors: l
     return lines
 
 
-def assign_distinct_colors(lines: list[Line]):
-    """
-    Assigns distinct colors to a collection of lines from `colors` variable.
-    :param lines: List of lines.
-    :return: None.
-    """
-    for i in range(len(lines)):
-        lines[i].color = colors[i]
-
-
 def pick_event_handler(event):
+    """ Pick event handler that shows coordinates of a data point which was clicked. """
     if isinstance(event.artist, Line2D):
         x = event.artist.get_xdata()[event.ind][0]
         y = event.artist.get_ydata()[event.ind][0]

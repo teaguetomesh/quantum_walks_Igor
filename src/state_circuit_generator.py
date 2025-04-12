@@ -12,13 +12,11 @@ from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
 
 from src.gleinig import MergeInitialize
-from src.permutation_circuit_generator import PermutationCircuitGenerator
-from src.permutation_generator import DensePermutationGenerator
-from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.quantum_walks import PathSegment, PathFinder
 from src.utilities.general import greedy_decision_tree, array_to_str
-from src.validation import get_state_vector
+from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds
+from src.utilities.validation import get_state_vector
 
 
 class StateCircuitGenerator(ABC):
@@ -130,58 +128,11 @@ class SingleEdgeGenerator(StateCircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class DensePermuteGenerator(StateCircuitGenerator):
-    """ Generates a circuit for a dense state, then permutes it to the target state. """
-    permutation_generator: DensePermutationGenerator
-    permutation_circuit_generator: PermutationCircuitGenerator
-
-    @staticmethod
-    def map_to_dense_state(state: dict[str, complex], dense_permutation: dict[str, str], dense_qubits: list[int]) -> list[complex]:
-        """ Permutes state according to given dense permutation and returns contiguous list of amplitudes where i-th element corresponds to basis i. """
-        dense_state = [0] * 2 ** len(dense_qubits)
-        for basis, amplitude in state.items():
-            mapped_basis = dense_permutation[basis]
-            dense_coords = ''.join([mapped_basis[i] for i in dense_qubits])
-            ind = int(dense_coords, 2)
-            dense_state[ind] = amplitude
-        return dense_state
-
-    @abstractmethod
-    def get_dense_state_circuit(self, dense_state: list[complex]) -> QuantumCircuit:
-        pass
+class MultiEdgeDenseGenerator(StateCircuitGenerator):
+    """ Uses multi-edge walk to prepare a dense state. """
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
-        dense_permutation, dense_qubits = self.permutation_generator.get_permutation(target_state)
-        dense_state = self.map_to_dense_state(target_state, dense_permutation, dense_qubits)
-        dense_state_qc = self.get_dense_state_circuit(dense_state)
-        inverse_permutation = {val: key for key, val in dense_permutation.items()}
-        permutation_qc = self.permutation_circuit_generator.get_permutation_circuit(inverse_permutation)
-        overall_qc = QuantumCircuit(permutation_qc.num_qubits)
-        any_dense_basis = next(iter(inverse_permutation))
-        sparse_qubits = list(set(range(len(any_dense_basis))) - set(dense_qubits))
-        for qubit in sparse_qubits:
-            if any_dense_basis[qubit] == '1':
-                overall_qc.x(len(any_dense_basis) - qubit - 1)
-        overall_qc.append(dense_state_qc, list(len(any_dense_basis) - 1 - np.array(dense_qubits)[::-1]))
-        overall_qc.append(permutation_qc, range(permutation_qc.num_qubits))
-        return overall_qc
-
-
-@dataclass(kw_only=True)
-class QiskitDenseGenerator(DensePermuteGenerator):
-    """ Uses qiskit's built-in state preparation on dense state. """
-
-    def get_dense_state_circuit(self, dense_state: list[complex]) -> QuantumCircuit:
-        """ Returns a quantum circuit that prepares a dense state via qiskit's prepare_state method. """
-        num_qubits = int(np.ceil(np.log2(len(dense_state))))
-        qc = QuantumCircuit(num_qubits)
-        qc.prepare_state(dense_state, range(num_qubits))
-        return qc
-
-
-@dataclass(kw_only=True)
-class MultiEdgeDenseGenerator(DensePermuteGenerator):
-    """ Uses multi-edge walk to prepare a dense state. """
+        pass
 
     def apply_mcrx(self, time: float, target_ind: int, control_inds: ndarray, qc: QuantumCircuit, current_state: Statevector):
         """ Applies multi-controlled Rx gate with the given parameters to the given quantum circuit and updates current state vector. """
