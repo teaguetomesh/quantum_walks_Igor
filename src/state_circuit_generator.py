@@ -3,16 +3,17 @@ from __future__ import annotations
 
 import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy import ndarray
+from qclib.gates.ldmcu import Ldmcu
 from qiskit import QuantumCircuit
-from qiskit.circuit.library import RZGate, RXGate
+from qiskit.circuit.library import RZGate, RXGate, PhaseGate
 from qiskit.quantum_info import Statevector
 
 from src.gleinig import MergeInitialize
-from src.quantum_walks import PathSegment, PathFinder
+from src.quantum_walks import PathSegment, PathFinder, PathFinderMHSNonlinear
 from src.utilities.general import greedy_decision_tree, array_to_str
 from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds
@@ -125,6 +126,108 @@ class SingleEdgeGenerator(StateCircuitGenerator):
         path = self.path_finder.get_path(target_state)
         circuit = self.convert_path_to_circuit(path)
         return circuit
+
+
+@dataclass
+class SingleEdgeGeneratorNew(SingleEdgeGenerator):
+    """ Alvin's version. """
+    path_finder: PathFinderMHSNonlinear = field(default_factory=PathFinderMHSNonlinear)
+
+    def convert_path_to_circuit(self, path: list[PathSegment]) -> QuantumCircuit:
+        qc = QuantumCircuit(len(path[0].labels[0]))
+        basis_states = [elem for segment in path for elem in segment.labels]
+        visited = [[int(char) for char in state] for state in list(dict.fromkeys(basis_states))]
+        path = path[::-1]
+        path_mutable = copy.deepcopy(path)
+        for idx in range(len(path)):
+            segment = path_mutable[idx]
+            origin = [int(char) for char in segment.labels[0]]
+            destination = [int(char) for char in segment.labels[1]]
+            interaction_ind = segment.interaction_index
+            diff_inds = get_different_inds(origin, destination, interaction_ind)
+            visited.remove(destination)
+            visited_transformed = np.array(visited)
+            for ind in diff_inds:
+                qc.cx(interaction_ind, ind)
+                visited_transformed[visited_transformed[:, interaction_ind] == 1, ind] ^= 1
+
+            origin_ind = visited.index(origin)
+            control_indices = find_min_control_set(visited_transformed, origin_ind, interaction_ind)
+            for ind in control_indices:
+                if visited_transformed[origin_ind][ind] == 0:
+                    qc.x(ind)
+
+            if segment.phase_time_2 is None:
+                rz_angle = -2 * segment.phase_time
+                rx_angle = -2 * segment.amplitude_time
+                if origin[interaction_ind] == 1:
+                    rz_angle *= -1
+
+                if not control_indices:
+                    if rx_angle != 0:
+                        rx_gate = RXGate(rx_angle)
+                        qc.append(rx_gate, [interaction_ind])
+                    if rz_angle != 0:
+                        rz_gate = RZGate(rz_angle)
+                        qc.append(rz_gate, [interaction_ind])
+                else:
+                    gate_definition = np.array([[np.exp(-1j * rz_angle / 2) * np.cos(rx_angle / 2), -1j * np.exp(-1j * rz_angle / 2) * np.sin(rx_angle / 2)],
+                                                [-1j * np.exp(1j * rz_angle / 2) * np.sin(rx_angle / 2), np.exp(1j * rz_angle / 2) * np.cos(rx_angle / 2)]])
+                    Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
+            else:  # LeafPathSegment. Everything should be backwards.
+                rz_angle1 = -segment.phase_time
+                rz_angle2 = -segment.phase_time_2
+                rx_angle = -segment.amplitude_time
+                if not control_indices:
+                    if origin[interaction_ind] == 1:
+                        rz_angle2 = -1 * rz_angle2
+                    else:
+                        rz_angle1 = -1 * rz_angle1
+                    phase_gate1 = PhaseGate(rz_angle1)
+                    phase_gate2 = PhaseGate(rz_angle2)
+                    rx_gate = RXGate(2 * rx_angle)
+                    qc.append(phase_gate2, [interaction_ind])
+                    qc.append(rx_gate, [interaction_ind])
+                    qc.append(phase_gate1, [interaction_ind])
+                else:
+                    if origin[interaction_ind] == 0:
+                        gate_definition = np.array([[np.exp(1j * rz_angle1) * np.cos(rx_angle), -1j * np.exp(1j * (rz_angle1 + rz_angle2)) * np.sin(rx_angle)],
+                                                    [-1j * np.sin(rx_angle), np.exp(1j * rz_angle2) * np.cos(rx_angle)]])
+                    else:
+                        gate_definition = np.array([[np.exp(1j * rz_angle2) * np.cos(rx_angle), -1j * np.sin(rx_angle)],
+                                                    [-1j * np.exp(1j * (rz_angle1 + rz_angle2)) * np.sin(rx_angle), np.exp(1j * rz_angle1) * np.cos(rx_angle)]])
+                    Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
+
+            for ind in control_indices:
+                if visited_transformed[origin_ind][ind] == 0:
+                    qc.x(ind)
+
+            # update the set of visited
+            for ind in diff_inds:
+                if destination[interaction_ind] == 1:
+                    destination[ind] ^= 1
+                # update the target state.
+                for segment in path_mutable:
+                    for label_ind in range(len(segment.labels)):
+                        if segment.labels[label_ind][interaction_ind] == "1":
+                            label = [int(char) for char in segment.labels[label_ind]]
+                            label[ind] ^= 1
+                            segment.labels[label_ind] = "".join(map(str, label))
+
+            visited = [list(x) for x in set(tuple(x) for x in visited_transformed)]
+            if self.add_barriers:
+                qc.barrier()
+
+        starting_state = "".join([str(char) for char in visited[0]])
+        indices_1 = [ind for ind, elem in enumerate(starting_state) if elem == "1"]
+        for ind in indices_1:
+            qc.x(ind)
+        if self.add_barriers:
+            qc.barrier()
+        qc = qc.inverse()
+        if self.remove_leading_cx:
+            qc = remove_leading_cx_gates(qc)
+        return qc.reverse_bits()
 
 
 @dataclass(kw_only=True)

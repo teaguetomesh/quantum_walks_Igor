@@ -9,7 +9,7 @@ import pandas as pd
 import qiskit
 from tqdm import tqdm
 
-from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator
+from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, SingleEdgeGeneratorNew, MergingStatesGenerator
 from src.utilities.general import make_dict
 from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.validation import execute_circuit, get_state_vector, get_fidelity
@@ -34,23 +34,24 @@ def prepare_state(target_state: dict[str, complex], circuit_generator: StateCirc
 
 def run_prepare_state():
     """ An entry point. Prepares the states from the target folder, counts CX gates in the resulting circuits and writes the results to a csv file. """
-    circuit_generator = QiskitDefaultGenerator()
-    # circuit_generator = SingleEdgeGenerator(path_finder=PathFinderSHP(), reduce_controls=True, remove_leading_cx=True, add_barriers=False)
-    # circuit_generator = MergingStatesGenerator()
+    # circuit_generator = QiskitDefaultGenerator()
+    # circuit_generator = SingleEdgeGeneratorNew()
+    circuit_generator = MergingStatesGenerator()
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits = [5]
-    num_amplitudes = [5]
-    out_col_name = 'shp_reduced'
+    num_qubits = np.array([7, 8, 9, 10])
+    num_amplitudes = num_qubits ** 2
+    # out_col_name = 'mhs_nonlinear'
+    out_col_name = 'merging_states'
     data_folder_parent = 'data'
-    num_workers = 1
+    num_workers = 12
     check_fidelity = True
     optimization_level = 3
     basis_gates = ['rx', 'ry', 'rz', 'h', 'cx']
     process_func = partial(prepare_state, **make_dict(circuit_generator, basis_gates, optimization_level, check_fidelity))
 
-    iterable = list(product(num_qubits, num_amplitudes))
-    for item in iterable:
+    # iterable = list(product(num_qubits, num_amplitudes))
+    for item in zip(num_qubits, num_amplitudes):
         print(f'Current iterable: {item}')
         data_folder = f'{data_folder_parent}/qubits_{item[0]}/m_{item[1]}'
         states_file_path = os.path.join(data_folder, 'states.pkl')

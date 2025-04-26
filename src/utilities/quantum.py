@@ -59,3 +59,7 @@ def get_cx_cost_rx(num_controls: int) -> int:
         return cx_by_num_controls[num_controls]
     else:
         return cx_by_num_controls[-1] + (num_controls - len(cx_by_num_controls) - 1) * 16
+
+
+def get_hamming_distance(str1: str, str2: str) -> int:
+    return sum(c1 != c2 for c1, c2 in zip(str1, str2))
