@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from itertools import combinations
 
 import numpy as np
 from numpy import ndarray
@@ -15,7 +16,8 @@ from qiskit.quantum_info import Statevector
 from src.gleinig import MergeInitialize
 from src.quantum_walks import PathSegment, PathFinder
 from src.utilities.general import greedy_decision_tree, array_to_str
-from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds, change_basis_if, change_basis, get_hamming_distance
+from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds, change_basis_if, change_basis, get_hamming_distance, \
+    find_min_control_set_2
 from src.utilities.validation import get_state_vector
 
 
@@ -156,8 +158,9 @@ class SingleEdgeGeneratorBackward(StateCircuitGenerator):
         z2, z2_score = min(zip(z2_search, z2_mhs_scores), key=lambda x: (x[1], get_hamming_distance(elem, x[0])))
         return z2, z2_score
 
-    def order_states_mhs_z1(self, basis: list[str]) -> (str, str, int):
+    def select_next_walk(self, basis: ndarray) -> (ndarray, ndarray, int):
         """ Returns z1, z2, target. """
+        basis = ["".join(str(val) for val in row) for row in basis]
         diffs_z1 = [[get_different_inds(basis[z1_ind], basis[z2_ind], -1) for z2_ind in range(len(basis)) if z2_ind != z1_ind] for z1_ind in range(len(basis))]
         mhs_scores_z1 = [len(solve_minimum_hitting_set(elem)) for elem in diffs_z1]
         # gets a list of the tuples. First element in the tuple is a list of the possible z2s. The second element is the corresponding target.
@@ -165,6 +168,7 @@ class SingleEdgeGeneratorBackward(StateCircuitGenerator):
         best_z2s, best_z2_scores = zip(*[self._select_z2(elem, z2_search) for elem, z2_search in zip(basis, z2_search_spaces)])
         z1, z2, target = min(zip(basis, best_z2s, targets, mhs_scores_z1, best_z2_scores, diffs_z1),
                              key=lambda elem: (elem[3] + elem[4], -sum(len(block) for block in elem[5])))[:3]
+        z1, z2 = ([int(val) for val in z] for z in (z1, z2))
         return z1, z2, target
 
     def implement_walk(self, walk_inds: (int, int), interaction_ind: int, target_state: (ndarray, list[complex]), qc: QuantumCircuit):
@@ -207,13 +211,25 @@ class SingleEdgeGeneratorBackward(StateCircuitGenerator):
         target_state = [bases, amplitudes]
         qc = QuantumCircuit(len(next(iter(target_state))))
         while len(target_state[0]) > 1:
-            z1, z2, interaction_ind = self.order_states_mhs_z1(["".join(str(val) for val in row) for row in target_state[0]])
-            walk_inds = tuple(np.where(np.all(target_state[0] == [int(val) for val in basis], axis=1))[0][0] for basis in (z1, z2))
+            z1, z2, interaction_ind = self.select_next_walk(target_state[0])
+            walk_inds = tuple(np.where(np.all(target_state[0] == basis, axis=1))[0][0] for basis in (z1, z2))
             self.implement_walk(walk_inds, interaction_ind, target_state, qc)
         for ind, val in enumerate(target_state[0][0]):
             if val == 1:
                 qc.x(ind)
         return qc.inverse().reverse_bits()
+
+
+@dataclass(kw_only=True)
+class SingleEdgeAlt(SingleEdgeGeneratorBackward):
+    def select_next_walk(self, basis: ndarray) -> (ndarray, ndarray, int):
+        best_result = None
+        for (z1_ind, z1), (z2_ind, z2) in combinations(enumerate(basis), 2):
+            diff_inds = get_different_inds(z1, z2, -1)
+            result = find_min_control_set_2(basis, z1_ind, diff_inds)
+            if best_result is None or len(best_result[0]) > len(result[0]):
+                best_result = result[0], z1, z2, result[2]
+        return best_result[1:]
 
 
 @dataclass(kw_only=True)

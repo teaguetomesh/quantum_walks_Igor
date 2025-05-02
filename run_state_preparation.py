@@ -9,7 +9,7 @@ import pandas as pd
 import qiskit
 from tqdm import tqdm
 
-from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, MergingStatesGenerator, SingleEdgeGeneratorBackward
+from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, MergingStatesGenerator, SingleEdgeGeneratorBackward, SingleEdgeAlt
 from src.utilities.general import make_dict
 from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.validation import execute_circuit, get_state_vector, get_fidelity
@@ -35,13 +35,14 @@ def prepare_state(target_state: dict[str, complex], circuit_generator: StateCirc
 def run_prepare_state():
     """ An entry point. Prepares the states from the target folder, counts CX gates in the resulting circuits and writes the results to a csv file. """
     # circuit_generator = QiskitDefaultGenerator()
-    circuit_generator = SingleEdgeGeneratorBackward(change_basis=False)
+    # circuit_generator = SingleEdgeGeneratorBackward(change_basis=False)
+    circuit_generator = SingleEdgeAlt(change_basis=True)
     # circuit_generator = MergingStatesGenerator()
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
     num_qubits = np.array([5])
     num_amplitudes = num_qubits
-    out_col_name = 'mhs_nonlinear_basis'
+    out_col_name = 'mhs_nonlinear_alt'
     # out_col_name = 'merging_states'
     data_folder_parent = 'data'
     num_workers = 1
