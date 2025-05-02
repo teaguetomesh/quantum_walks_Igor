@@ -209,7 +209,7 @@ class SingleEdgeGeneratorBackward(StateCircuitGenerator):
         bases = np.array([[int(char) for char in basis] for basis in target_state])
         amplitudes = list(target_state.values())
         target_state = [bases, amplitudes]
-        qc = QuantumCircuit(len(next(iter(target_state))))
+        qc = QuantumCircuit(bases.shape[1])
         while len(target_state[0]) > 1:
             z1, z2, interaction_ind = self.select_next_walk(target_state[0])
             walk_inds = tuple(np.where(np.all(target_state[0] == basis, axis=1))[0][0] for basis in (z1, z2))
