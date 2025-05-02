@@ -40,8 +40,8 @@ def run_prepare_state():
     # circuit_generator = MergingStatesGenerator()
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits = np.array([5])
-    num_amplitudes = num_qubits
+    num_qubits = np.array([5, 6, 7, 8, 9, 10, 11])
+    num_amplitudes = num_qubits ** 2
     out_col_name = 'mhs_nonlinear_alt'
     # out_col_name = 'merging_states'
     data_folder_parent = 'data'

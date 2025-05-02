@@ -75,9 +75,26 @@ def plot_qiskit_comparison():
     save_figure()
 
 
+def plot_gleinig_difference():
+    methods_to_compare = ["mhs_nonlinear", "merging_states"]
+    num_qubits = np.array(range(5, 12))
+    num_amplitudes = num_qubits ** 2
+
+    ys = []
+    for n, m in zip(num_qubits, num_amplitudes):
+        data_path = f"../data/qubits_{n}/m_{m}/cx_counts.csv"
+        df = pd.read_csv(data_path)
+        ys.append(np.mean(df[methods_to_compare[0]]) - np.mean(df[methods_to_compare[1]]))
+
+    line = Line(num_qubits, ys)
+    plot_general([line], ("n", "CX difference"), boundaries=(4.75, 11.25, None, None))
+    save_figure()
+
+
 if __name__ == "__main__":
     # plot_control_reduction_effect()
     # plot_walk_order_comparison()
-    plot_qiskit_comparison()
+    # plot_qiskit_comparison()
+    plot_gleinig_difference()
 
     plt.show()
