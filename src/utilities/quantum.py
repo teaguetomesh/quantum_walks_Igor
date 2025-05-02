@@ -63,3 +63,18 @@ def get_cx_cost_rx(num_controls: int) -> int:
 
 def get_hamming_distance(str1: str, str2: str) -> int:
     return sum(c1 != c2 for c1, c2 in zip(str1, str2))
+
+
+def change_basis(basis: str, change_inds: list[int]) -> str:
+    """ Flips bitstring in the specified indices. """
+    changed_basis = np.array([int(val) for val in basis])
+    changed_basis[change_inds] ^= 1
+    changed_basis = "".join([str(val) for val in changed_basis])
+    return changed_basis
+
+
+def change_basis_if(basis: str, change_inds: list[int], control_ind: int) -> str:
+    """ Flips bitstring in the specified indices if the control index is 1. """
+    if basis[control_ind] == "0":
+        return basis
+    return change_basis(basis, change_inds)

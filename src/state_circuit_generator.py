@@ -3,20 +3,19 @@ from __future__ import annotations
 
 import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 from numpy import ndarray
 from qclib.gates.ldmcu import Ldmcu
 from qiskit import QuantumCircuit
-from qiskit.circuit.library import RZGate, RXGate, PhaseGate
+from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
 
 from src.gleinig import MergeInitialize
-from src.quantum_walks import PathSegment, PathFinder, PathFinderMHSNonlinear
+from src.quantum_walks import PathSegment, PathFinder
 from src.utilities.general import greedy_decision_tree, array_to_str
-from src.utilities.qiskit_utilities import remove_leading_cx_gates
-from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds
+from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds, change_basis_if, change_basis, get_hamming_distance
 from src.utilities.validation import get_state_vector
 
 
@@ -54,13 +53,9 @@ class SingleEdgeGenerator(StateCircuitGenerator):
     """
     Finds a particular path through the target basis states and generates the circuit based on single-edge segments of that path.
     :var path_finder: PathFinder class implementing a particular heuristic for finding path through the basis states.
-    :var reduce_controls: True to search for minimally necessary state of controls. False to use all n-1 controls (to save classical time).
-    :var remove_leading_cx: True to remove leading CX gates whose controls are never satisfied.
     :var add_barriers: True to insert barriers between path segments.
     """
     path_finder: PathFinder
-    reduce_controls: bool = True
-    remove_leading_cx: bool = True
     add_barriers: bool = False
 
     def convert_path_to_circuit(self, path: list[PathSegment]) -> QuantumCircuit:
@@ -90,10 +85,7 @@ class SingleEdgeGenerator(StateCircuitGenerator):
                 visited_transformed[visited_transformed[:, interaction_ind] == 1, ind] ^= 1
 
             origin_ind = visited.index(origin)
-            if self.reduce_controls:
-                control_indices = find_min_control_set(visited_transformed, origin_ind, interaction_ind)
-            else:
-                control_indices = [ind for ind in range(len(origin)) if ind != interaction_ind]
+            control_indices = find_min_control_set(visited_transformed, origin_ind, interaction_ind)
             control_vals = array_to_str(visited_transformed[origin_ind, control_indices])
 
             rz_angle = 2 * segment.phase_time
@@ -118,8 +110,6 @@ class SingleEdgeGenerator(StateCircuitGenerator):
             if self.add_barriers:
                 qc.barrier()
 
-        if self.remove_leading_cx:
-            qc = remove_leading_cx_gates(qc)
         return qc.reverse_bits()
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
@@ -128,106 +118,96 @@ class SingleEdgeGenerator(StateCircuitGenerator):
         return circuit
 
 
-@dataclass
-class SingleEdgeGeneratorNew(SingleEdgeGenerator):
-    """ Alvin's version. """
-    path_finder: PathFinderMHSNonlinear = field(default_factory=PathFinderMHSNonlinear)
+class SingleEdgeGeneratorBackward(StateCircuitGenerator):
+    """ Simplified Alvin's version. """
 
-    def convert_path_to_circuit(self, path: list[PathSegment]) -> QuantumCircuit:
-        qc = QuantumCircuit(len(path[0].labels[0]))
-        basis_states = [elem for segment in path for elem in segment.labels]
-        visited = [[int(char) for char in state] for state in list(dict.fromkeys(basis_states))]
-        path = path[::-1]
-        path_mutable = copy.deepcopy(path)
-        for idx in range(len(path)):
-            segment = path_mutable[idx]
-            origin = [int(char) for char in segment.labels[0]]
-            destination = [int(char) for char in segment.labels[1]]
-            interaction_ind = segment.interaction_index
-            diff_inds = get_different_inds(origin, destination, interaction_ind)
-            visited.remove(destination)
-            visited_transformed = np.array(visited)
-            for ind in diff_inds:
-                qc.cx(interaction_ind, ind)
-                visited_transformed[visited_transformed[:, interaction_ind] == 1, ind] ^= 1
+    @staticmethod
+    def _get_single_hit_z2s(interaction_ind: int, remaining_basis: list[str], z1_diffs: list[list[int]], z1_mhs: list[int]) -> list[str]:
+        """ Filters remaining_basis such that z1_diffs[i] intersects z1_mhs[i] only at interaction_ind. """
+        new_remaining_basis = [remaining_basis[idx] for idx, elem in enumerate(z1_diffs) if set(elem).intersection(set(z1_mhs)) == {interaction_ind}]
+        return new_remaining_basis
 
-            origin_ind = visited.index(origin)
-            control_indices = find_min_control_set(visited_transformed, origin_ind, interaction_ind)
-            for ind in control_indices:
-                if visited_transformed[origin_ind][ind] == 0:
-                    qc.x(ind)
+    def _get_z2_search(self, elem: str, basis: list[str]) -> (list[str], int):
+        """ Returns the z2 search space and target qubit.
+        :param elem: z1
+        :param basis: all the basis states including elem.
+        :return: z2 and interaction index """
+        remaining_basis = [elem2 for elem2 in basis if elem2 != elem]
+        diffs = [get_different_inds(elem, z2, -1) for z2 in remaining_basis]
+        # Search for the target qubit.
+        mhs = solve_minimum_hitting_set(diffs)
+        # todo: the frequency should be counted over blocks that intersect the mhs at a single element.
+        interaction_ind = min(mhs, key=lambda idx: sum([1 for block in diffs if idx in block]))
+        z2_search = self._get_single_hit_z2s(interaction_ind, remaining_basis, diffs, mhs)
+        return z2_search, interaction_ind
 
-            if segment.phase_time_2 is None:
-                rz_angle = -2 * segment.phase_time
-                rx_angle = -2 * segment.amplitude_time
-                if origin[interaction_ind] == 1:
-                    rz_angle *= -1
+    def _select_z2(self, elem: str, z2_search: list[str]) -> (str, int):
+        """ Returns a tuple of z2 and the number of controls required to differentiate z2 from the rest of the elements. """
+        if len(z2_search) == 1:
+            return z2_search[0], 0
 
-                if not control_indices:
-                    if rx_angle != 0:
-                        rx_gate = RXGate(rx_angle)
-                        qc.append(rx_gate, [interaction_ind])
-                    if rz_angle != 0:
-                        rz_gate = RZGate(rz_angle)
-                        qc.append(rz_gate, [interaction_ind])
-                else:
-                    gate_definition = np.array([[np.exp(-1j * rz_angle / 2) * np.cos(rx_angle / 2), -1j * np.exp(-1j * rz_angle / 2) * np.sin(rx_angle / 2)],
-                                                [-1j * np.exp(1j * rz_angle / 2) * np.sin(rx_angle / 2), np.exp(1j * rz_angle / 2) * np.cos(rx_angle / 2)]])
-                    Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
-            else:  # LeafPathSegment. Everything should be backwards.
-                rz_angle1 = -segment.phase_time
-                rz_angle2 = -segment.phase_time_2
-                rx_angle = -segment.amplitude_time
-                if not control_indices:
-                    if origin[interaction_ind] == 1:
-                        rz_angle2 = -1 * rz_angle2
-                    else:
-                        rz_angle1 = -1 * rz_angle1
-                    phase_gate1 = PhaseGate(rz_angle1)
-                    phase_gate2 = PhaseGate(rz_angle2)
-                    rx_gate = RXGate(2 * rx_angle)
-                    qc.append(phase_gate2, [interaction_ind])
-                    qc.append(rx_gate, [interaction_ind])
-                    qc.append(phase_gate1, [interaction_ind])
-                else:
-                    if origin[interaction_ind] == 0:
-                        gate_definition = np.array([[np.exp(1j * rz_angle1) * np.cos(rx_angle), -1j * np.exp(1j * (rz_angle1 + rz_angle2)) * np.sin(rx_angle)],
-                                                    [-1j * np.sin(rx_angle), np.exp(1j * rz_angle2) * np.cos(rx_angle)]])
-                    else:
-                        gate_definition = np.array([[np.exp(1j * rz_angle2) * np.cos(rx_angle), -1j * np.sin(rx_angle)],
-                                                    [-1j * np.exp(1j * (rz_angle1 + rz_angle2)) * np.sin(rx_angle), np.exp(1j * rz_angle1) * np.cos(rx_angle)]])
-                    Ldmcu.ldmcu(qc, gate_definition, control_indices, interaction_ind)
+        z2_mhs_scores = []
+        for ind1 in range(len(z2_search)):
+            diff_inds = [get_different_inds(z2_search[ind1], z2_search[ind2], -1) for ind2 in range(len(z2_search)) if ind2 != ind1]
+            mhs = solve_minimum_hitting_set(diff_inds)
+            z2_mhs_scores.append(len(mhs))
+        z2, z2_score = min(zip(z2_search, z2_mhs_scores), key=lambda x: (x[1], get_hamming_distance(elem, x[0])))
+        return z2, z2_score
 
-            for ind in control_indices:
-                if visited_transformed[origin_ind][ind] == 0:
-                    qc.x(ind)
+    def order_states_mhs_z1(self, basis: list[str]) -> (str, str, int):
+        """ Returns z1, z2, target. """
+        diffs_z1 = [[get_different_inds(basis[z1_ind], basis[z2_ind], -1) for z2_ind in range(len(basis)) if z2_ind != z1_ind] for z1_ind in range(len(basis))]
+        mhs_scores_z1 = [len(solve_minimum_hitting_set(elem)) for elem in diffs_z1]
+        # gets a list of the tuples. First element in the tuple is a list of the possible z2s. The second element is the corresponding target.
+        z2_search_spaces, targets = zip(*[self._get_z2_search(elem, basis) for elem in basis])
+        best_z2s, best_z2_scores = zip(*[self._select_z2(elem, z2_search) for elem, z2_search in zip(basis, z2_search_spaces)])
+        z1, z2, target = min(zip(basis, best_z2s, targets, mhs_scores_z1, best_z2_scores, diffs_z1),
+                             key=lambda elem: (elem[3] + elem[4], -sum(len(block) for block in elem[5])))[:3]
+        return z1, z2, target
 
-            # update the set of visited
-            for ind in diff_inds:
-                if destination[interaction_ind] == 1:
-                    destination[ind] ^= 1
-                # update the target state.
-                for segment in path_mutable:
-                    for label_ind in range(len(segment.labels)):
-                        if segment.labels[label_ind][interaction_ind] == "1":
-                            label = [int(char) for char in segment.labels[label_ind]]
-                            label[ind] ^= 1
-                            segment.labels[label_ind] = "".join(map(str, label))
+    def implement_walk(self, walk_inds: (int, int), interaction_ind: int, target_state: (ndarray, list[complex]), qc: QuantumCircuit):
+        """
+        Implements walk that merges specified bases and updates current state and circuit accordingly.
+        :param walk_inds: Indices of bases from target state. Basis at index 1 will be merged into basis at index 0.
+        :param interaction_ind: Index of dimension through which the merge should take place.
+        :param target_state: Current sparse state. 0th element is a 2D array of all non-zero bases, 1st element is a list of the corresponding amplitudes.
+        :param qc: Current quantum circuit.
+        """
+        diff_inds = get_different_inds(target_state[0][walk_inds[0]], target_state[0][walk_inds[1]], interaction_ind)
+        for ind in diff_inds:
+            qc.cx(interaction_ind, ind)
+        target_state[0][np.ix_(target_state[0][:, interaction_ind] == 1, diff_inds)] ^= 1
 
-            visited = [list(x) for x in set(tuple(x) for x in visited_transformed)]
-            if self.add_barriers:
-                qc.barrier()
+        amplitudes = np.array([target_state[1][ind] for ind in walk_inds])
+        rz = np.angle(amplitudes[0]) - np.angle(amplitudes[1]) + np.pi / 2
+        rx = np.arctan(abs(amplitudes[1]) / abs(amplitudes[0]))
+        interaction_vals = np.array([target_state[0][ind][interaction_ind] for ind in walk_inds])
+        unitary = np.array([[np.cos(rx), -1j * np.sin(rx)],
+                            [-1j * np.sin(rx), np.cos(rx)]])
+        unitary[:, interaction_vals[1]] *= np.exp(1j * rz)
+        control_inds = find_min_control_set(target_state[0], walk_inds[0], interaction_ind)
+        control_vals = target_state[0][walk_inds[0]][control_inds]
+        control_state = "".join([str(val) for val in reversed(control_vals)])
+        Ldmcu.ldmcu(qc, unitary, control_inds, interaction_ind, control_state)
 
-        starting_state = "".join([str(char) for char in visited[0]])
-        indices_1 = [ind for ind, elem in enumerate(starting_state) if elem == "1"]
-        for ind in indices_1:
-            qc.x(ind)
-        if self.add_barriers:
-            qc.barrier()
-        qc = qc.inverse()
-        if self.remove_leading_cx:
-            qc = remove_leading_cx_gates(qc)
-        return qc.reverse_bits()
+        new_amplitudes = unitary @ amplitudes[interaction_vals]
+        target_state[1][walk_inds[0]] = new_amplitudes[interaction_vals[0]]
+        target_state[0] = np.delete(target_state[0], walk_inds[1], axis=0)
+        del target_state[1][walk_inds[1]]
+
+    def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
+        bases = np.array([[int(char) for char in basis] for basis in target_state])
+        amplitudes = list(target_state.values())
+        target_state = [bases, amplitudes]
+        qc = QuantumCircuit(len(next(iter(target_state))))
+        while len(target_state[0]) > 1:
+            z1, z2, interaction_ind = self.order_states_mhs_z1(["".join(str(val) for val in row) for row in target_state[0]])
+            walk_inds = tuple(np.where(np.all(target_state[0] == [int(val) for val in basis], axis=1))[0][0] for basis in (z1, z2))
+            self.implement_walk(walk_inds, interaction_ind, target_state, qc)
+        for ind, val in enumerate(target_state[0][0]):
+            if val == 1:
+                qc.x(ind)
+        return qc.inverse().reverse_bits()
 
 
 @dataclass(kw_only=True)
@@ -372,24 +352,11 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
                 edge.bases = edge.bases[::-1]
         return oriented_edges
 
-    def change_basis(self, basis: str, change_inds: list[int]) -> str:
-        """ Flips bitstring in the specified indices. """
-        changed_basis = np.array([int(val) for val in basis])
-        changed_basis[change_inds] ^= 1
-        changed_basis = ''.join([str(val) for val in changed_basis])
-        return changed_basis
-
-    def change_basis_if(self, basis: str, change_inds: list[int], control_ind: int) -> str:
-        """ Flips bitstring in the specified indices if the control index is 1. """
-        if basis[control_ind] == '0':
-            return basis
-        return self.change_basis(basis, change_inds)
-
     def apply_transform(self, edges: list[TreeEdge], target_ind: int, rx_dims: list[int]):
         """ Adds transformed origin. """
         change_inds = [ind for ind in rx_dims if ind != target_ind]
         for edge in edges:
-            edge.transformed_bases = tuple(self.change_basis_if(basis, change_inds, target_ind) if basis is not None else None for basis in edge.bases)
+            edge.transformed_bases = tuple(change_basis_if(basis, change_inds, target_ind) if basis is not None else None for basis in edge.bases)
 
     def calculate_different_ind_matrix(self, bases: list[str], ignore_ind: int) -> ndarray[list[int]]:
         """ Calculates a matrix where element [i, j] is a list of different indices between i-th and j-th bases, except ignore_ind. """
@@ -531,7 +498,7 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
     def update_state_amplitudes(self, current_state: dict[str, complex], control_inds: list[int], control_vals: str, target_ind: int, rotation_time: float):
         """ Updates amplitudes in the current state to match the state after Rx rotation and permutation. """
         for basis in list(current_state):
-            neighbor = self.change_basis(basis, [target_ind])
+            neighbor = change_basis(basis, [target_ind])
             if basis[target_ind] == '1' and neighbor in current_state:
                 continue
             basis_control_vals = self.get_substring(basis, control_inds)
@@ -545,7 +512,7 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
     def transfer_amplitude(self, edge: TreeEdge, control_inds: list[int], control_vals: str, target_ind: int, current_state: dict[str, complex], circuit: QuantumCircuit):
         """ Transfers amplitude for given edge to match the target state. """
         origin_amplitude = current_state[edge.transformed_bases[0]]
-        destination_amplitude = current_state.get(self.change_basis(edge.transformed_bases[0], [target_ind]), 0)
+        destination_amplitude = current_state.get(change_basis(edge.transformed_bases[0], [target_ind]), 0)
         total_prob = abs(origin_amplitude) ** 2 + abs(destination_amplitude) ** 2
         rotation_time = self.solve_rx_time(origin_amplitude, destination_amplitude, total_prob)
         rotation_time += self.solve_rx_time(total_prob ** 0.5, 0, edge.probabilities[0])
@@ -569,7 +536,7 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
         level_circuit = QuantumCircuit(conjugating_circuit.num_qubits)
         level_circuit.compose(conjugating_circuit, inplace=True)
         change_inds = [ind for ind in level.rx_dims if ind != level.target_ind]
-        current_state = {self.change_basis_if(basis, change_inds, level.target_ind): amplitude for basis, amplitude in current_state.items()}
+        current_state = {change_basis_if(basis, change_inds, level.target_ind): amplitude for basis, amplitude in current_state.items()}
 
         if last_level:
             for edge, control_inds, control_vals in level.edges:
@@ -585,7 +552,7 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
                 self.adjust_phase(edge, control_inds, control_vals, level.target_ind, current_state, target_state, level_circuit)
 
         level_circuit.compose(conjugating_circuit.reverse_ops(), inplace=True)
-        current_state = {self.change_basis_if(basis, change_inds, level.target_ind): amplitude for basis, amplitude in current_state.items()}
+        current_state = {change_basis_if(basis, change_inds, level.target_ind): amplitude for basis, amplitude in current_state.items()}
         return level_circuit.reverse_bits(), current_state
 
     def prepare_permutation_circuit(self, level: TreeLevel, current_state: dict[str, complex]) -> QuantumCircuit:
@@ -594,7 +561,7 @@ class MultiEdgeSparseGenerator(StateCircuitGenerator):
         for edge, _, _ in level.edges:
             permutation[edge.bases[0]] = edge.bases[0]
             if edge.bases[1] is not None:
-                image = self.change_basis(edge.bases[0], level.rx_dims)
+                image = change_basis(edge.bases[0], level.rx_dims)
                 permutation[image] = edge.bases[1]
                 if image != edge.bases[1]:
                     current_state[edge.bases[1]] = current_state.pop(image)
