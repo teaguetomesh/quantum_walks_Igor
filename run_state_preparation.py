@@ -35,13 +35,13 @@ def prepare_state(target_state: dict[str, complex], circuit_generator: StateCirc
 def run_prepare_state():
     """ An entry point. Prepares the states from the target folder, counts CX gates in the resulting circuits and writes the results to a csv file. """
     # circuit_generator = QiskitDefaultGenerator()
-    circuit_generator = SingleEdgeGeneratorBackward()
+    circuit_generator = SingleEdgeGeneratorBackward(change_basis=False)
     # circuit_generator = MergingStatesGenerator()
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
     num_qubits = np.array([5])
     num_amplitudes = num_qubits
-    out_col_name = 'mhs_nonlinear'
+    out_col_name = 'mhs_nonlinear_basis'
     # out_col_name = 'merging_states'
     data_folder_parent = 'data'
     num_workers = 1

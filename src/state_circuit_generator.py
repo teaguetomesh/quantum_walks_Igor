@@ -118,8 +118,10 @@ class SingleEdgeGenerator(StateCircuitGenerator):
         return circuit
 
 
+@dataclass(kw_only=True)
 class SingleEdgeGeneratorBackward(StateCircuitGenerator):
     """ Simplified Alvin's version. """
+    change_basis: bool = True
 
     @staticmethod
     def _get_single_hit_z2s(interaction_ind: int, remaining_basis: list[str], z1_diffs: list[list[int]], z1_mhs: list[int]) -> list[str]:
@@ -189,11 +191,15 @@ class SingleEdgeGeneratorBackward(StateCircuitGenerator):
         control_vals = target_state[0][walk_inds[0]][control_inds]
         control_state = "".join([str(val) for val in reversed(control_vals)])
         Ldmcu.ldmcu(qc, unitary, control_inds, interaction_ind, control_state)
-
         new_amplitudes = unitary @ amplitudes[interaction_vals]
         target_state[1][walk_inds[0]] = new_amplitudes[interaction_vals[0]]
         target_state[0] = np.delete(target_state[0], walk_inds[1], axis=0)
         del target_state[1][walk_inds[1]]
+
+        if not self.change_basis:
+            for ind in reversed(diff_inds):
+                qc.cx(interaction_ind, ind)
+            target_state[0][np.ix_(target_state[0][:, interaction_ind] == 1, diff_inds)] ^= 1
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
         bases = np.array([[int(char) for char in basis] for basis in target_state])
