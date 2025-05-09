@@ -17,7 +17,7 @@ from src.gleinig import MergeInitialize
 from src.quantum_walks import PathSegment, PathFinder
 from src.utilities.general import greedy_decision_tree, array_to_str
 from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds, change_basis_if, change_basis, get_hamming_distance, \
-    find_min_control_set_2
+    find_min_control_set_2, get_num_neighbors
 from src.utilities.validation import get_state_vector
 
 
@@ -121,9 +121,10 @@ class SingleEdgeGenerator(StateCircuitGenerator):
 
 
 @dataclass(kw_only=True)
-class SingleEdgeGeneratorBackward(StateCircuitGenerator):
-    """ Simplified Alvin's version. """
+class MHSTreeGeneratorHeuristic(StateCircuitGenerator):
+    """ Extended Alvin's version. """
     change_basis: bool = True
+    multiedge: bool = True
 
     @staticmethod
     def _get_single_hit_z2s(interaction_ind: int, remaining_basis: list[str], z1_diffs: list[list[int]], z1_mhs: list[int]) -> list[str]:
@@ -158,78 +159,95 @@ class SingleEdgeGeneratorBackward(StateCircuitGenerator):
         z2, z2_score = min(zip(z2_search, z2_mhs_scores), key=lambda x: (x[1], get_hamming_distance(elem, x[0])))
         return z2, z2_score
 
-    def select_next_walk(self, basis: ndarray) -> (ndarray, ndarray, int):
-        """ Returns z1, z2, target. """
-        basis = ["".join(str(val) for val in row) for row in basis]
-        diffs_z1 = [[get_different_inds(basis[z1_ind], basis[z2_ind], -1) for z2_ind in range(len(basis)) if z2_ind != z1_ind] for z1_ind in range(len(basis))]
+    def select_next_walk(self, bases: ndarray) -> ((int, int), int):
+        """ Returns z1 index, z2 index, target index. """
+        bases = ["".join(str(val) for val in row) for row in bases]
+        diffs_z1 = [[get_different_inds(bases[z1_ind], bases[z2_ind], -1) for z2_ind in range(len(bases)) if z2_ind != z1_ind] for z1_ind in range(len(bases))]
         mhs_scores_z1 = [len(solve_minimum_hitting_set(elem)) for elem in diffs_z1]
         # gets a list of the tuples. First element in the tuple is a list of the possible z2s. The second element is the corresponding target.
-        z2_search_spaces, targets = zip(*[self._get_z2_search(elem, basis) for elem in basis])
-        best_z2s, best_z2_scores = zip(*[self._select_z2(elem, z2_search) for elem, z2_search in zip(basis, z2_search_spaces)])
-        z1, z2, target = min(zip(basis, best_z2s, targets, mhs_scores_z1, best_z2_scores, diffs_z1),
+        z2_search_spaces, targets = zip(*[self._get_z2_search(elem, bases) for elem in bases])
+        best_z2s, best_z2_scores = zip(*[self._select_z2(elem, z2_search) for elem, z2_search in zip(bases, z2_search_spaces)])
+        z1, z2, target = min(zip(bases, best_z2s, targets, mhs_scores_z1, best_z2_scores, diffs_z1),
                              key=lambda elem: (elem[3] + elem[4], -sum(len(block) for block in elem[5])))[:3]
-        z1, z2 = ([int(val) for val in z] for z in (z1, z2))
-        return z1, z2, target
+        z_inds = tuple(bases.index(basis) for basis in (z1, z2))
+        return z_inds, target
 
-    def implement_walk(self, walk_inds: (int, int), interaction_ind: int, target_state: (ndarray, list[complex]), qc: QuantumCircuit):
+    def update_state(self, unitary: ndarray, control_inds: ndarray, control_vals: ndarray, interaction_ind: int, current_state: (ndarray, list[complex]), tol: float = 1e-8) -> \
+            (ndarray, list[complex]):
+        """ Applies specified gate to the current state. Returns the updated state. """
+        new_state = {}
+        for basis, amplitude in zip(*current_state):
+            if len(control_inds) > 0 and not np.all(basis[control_inds] == control_vals):
+                new_state[tuple(basis)] = amplitude
+            else:
+                new_state[tuple(basis)] = new_state.get(tuple(basis), 0) + unitary[basis[interaction_ind], basis[interaction_ind]] * amplitude
+                neighbor = basis ^ (np.arange(len(basis)) == interaction_ind)
+                new_state[tuple(neighbor)] = new_state.get(tuple(neighbor), 0) + unitary[neighbor[interaction_ind], basis[interaction_ind]] * amplitude
+        new_state = {basis: amplitude for basis, amplitude in new_state.items() if abs(amplitude) > tol}
+        return [np.array([basis for basis in new_state]), list(new_state.values())]
+
+    def implement_walk(self, walk_inds: (int, int), interaction_ind: int, current_state: (ndarray, list[complex]), qc: QuantumCircuit) -> (ndarray, list[complex]):
         """
         Implements walk that merges specified bases and updates current state and circuit accordingly.
         :param walk_inds: Indices of bases from target state. Basis at index 1 will be merged into basis at index 0.
         :param interaction_ind: Index of dimension through which the merge should take place.
-        :param target_state: Current sparse state. 0th element is a 2D array of all non-zero bases, 1st element is a list of the corresponding amplitudes.
+        :param current_state: Current sparse state. 0th element is a 2D array of all non-zero bases, 1st element is a list of the corresponding amplitudes.
         :param qc: Current quantum circuit.
+        :return: Updated state after walk.
         """
-        diff_inds = get_different_inds(target_state[0][walk_inds[0]], target_state[0][walk_inds[1]], interaction_ind)
+        diff_inds = get_different_inds(current_state[0][walk_inds[0]], current_state[0][walk_inds[1]], interaction_ind)
         for ind in diff_inds:
             qc.cx(interaction_ind, ind)
-        target_state[0][np.ix_(target_state[0][:, interaction_ind] == 1, diff_inds)] ^= 1
+        current_state[0][np.ix_(current_state[0][:, interaction_ind] == 1, diff_inds)] ^= 1
 
-        amplitudes = np.array([target_state[1][ind] for ind in walk_inds])
+        amplitudes = np.array([current_state[1][ind] for ind in walk_inds])
         rz = np.angle(amplitudes[0]) - np.angle(amplitudes[1]) + np.pi / 2
         rx = np.arctan(abs(amplitudes[1]) / abs(amplitudes[0]))
-        interaction_vals = np.array([target_state[0][ind][interaction_ind] for ind in walk_inds])
+        interaction_vals = np.array([current_state[0][ind][interaction_ind] for ind in walk_inds])
         unitary = np.array([[np.cos(rx), -1j * np.sin(rx)],
                             [-1j * np.sin(rx), np.cos(rx)]])
         unitary[:, interaction_vals[1]] *= np.exp(1j * rz)
-        control_inds = find_min_control_set(target_state[0], walk_inds[0], interaction_ind)
-        control_vals = target_state[0][walk_inds[0]][control_inds]
+        control_inds = np.array(find_min_control_set(current_state[0], walk_inds[0], interaction_ind, self.multiedge))
+        control_vals = current_state[0][walk_inds[0]][control_inds] if len(control_inds) > 0 else []
         control_state = "".join([str(val) for val in reversed(control_vals)])
         Ldmcu.ldmcu(qc, unitary, control_inds, interaction_ind, control_state)
-        new_amplitudes = unitary @ amplitudes[interaction_vals]
-        target_state[1][walk_inds[0]] = new_amplitudes[interaction_vals[0]]
-        target_state[0] = np.delete(target_state[0], walk_inds[1], axis=0)
-        del target_state[1][walk_inds[1]]
+        current_state = self.update_state(unitary, control_inds, control_vals, interaction_ind, current_state)
 
         if not self.change_basis:
             for ind in reversed(diff_inds):
                 qc.cx(interaction_ind, ind)
-            target_state[0][np.ix_(target_state[0][:, interaction_ind] == 1, diff_inds)] ^= 1
+            current_state[0][np.ix_(current_state[0][:, interaction_ind] == 1, diff_inds)] ^= 1
+        return current_state
 
     def generate_circuit(self, target_state: dict[str, complex]) -> QuantumCircuit:
         bases = np.array([[int(char) for char in basis] for basis in target_state])
         amplitudes = list(target_state.values())
-        target_state = [bases, amplitudes]
+        current_state = [bases, amplitudes]
         qc = QuantumCircuit(bases.shape[1])
-        while len(target_state[0]) > 1:
-            z1, z2, interaction_ind = self.select_next_walk(target_state[0])
-            walk_inds = tuple(np.where(np.all(target_state[0] == basis, axis=1))[0][0] for basis in (z1, z2))
-            self.implement_walk(walk_inds, interaction_ind, target_state, qc)
-        for ind, val in enumerate(target_state[0][0]):
+        while len(current_state[0]) > 1:
+            walk_inds, interaction_ind = self.select_next_walk(current_state[0])
+            current_state = self.implement_walk(walk_inds, interaction_ind, current_state, qc)
+        for ind, val in enumerate(current_state[0][0]):
             if val == 1:
                 qc.x(ind)
         return qc.inverse().reverse_bits()
 
 
 @dataclass(kw_only=True)
-class SingleEdgeAlt(SingleEdgeGeneratorBackward):
-    def select_next_walk(self, basis: ndarray) -> (ndarray, ndarray, int):
+class MHSTreeGeneratorExhaustive(MHSTreeGeneratorHeuristic):
+    """ Considers all pairs and all interaction indices when selecting the next pair. """
+    def select_next_walk(self, bases: ndarray) -> ((int, int), int):
         best_result = None
-        for (z1_ind, z1), (z2_ind, z2) in combinations(enumerate(basis), 2):
+        for (z1_ind, z1), (z2_ind, z2) in combinations(enumerate(bases), 2):
             diff_inds = get_different_inds(z1, z2, -1)
-            result = find_min_control_set_2(basis, z1_ind, diff_inds)
+            result = find_min_control_set_2(bases, z1_ind, diff_inds, self.multiedge)
             if best_result is None or len(best_result[0]) > len(result[0]):
-                best_result = result[0], z1, z2, result[2]
-        return best_result[1:]
+                best_result = [result[0], z1_ind, z2_ind, result[2]]
+        walk_inds, interaction_ind = best_result[1:3], best_result[3]
+        num_neighbors = [get_num_neighbors(bases, basis_ind) for basis_ind in walk_inds]
+        if num_neighbors[1] < num_neighbors[0]:
+            walk_inds = walk_inds[::-1]
+        return walk_inds, interaction_ind
 
 
 @dataclass(kw_only=True)

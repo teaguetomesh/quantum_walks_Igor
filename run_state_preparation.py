@@ -9,7 +9,7 @@ import pandas as pd
 import qiskit
 from tqdm import tqdm
 
-from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, MergingStatesGenerator, SingleEdgeGeneratorBackward, SingleEdgeAlt
+from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, MergingStatesGenerator, MHSTreeGeneratorHeuristic, MHSTreeGeneratorExhaustive
 from src.utilities.general import make_dict
 from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.validation import execute_circuit, get_state_vector, get_fidelity
@@ -36,16 +36,17 @@ def run_prepare_state():
     """ An entry point. Prepares the states from the target folder, counts CX gates in the resulting circuits and writes the results to a csv file. """
     # circuit_generator = QiskitDefaultGenerator()
     # circuit_generator = SingleEdgeGeneratorBackward(change_basis=True)
-    circuit_generator = SingleEdgeAlt(change_basis=True)
+    circuit_generator = MHSTreeGeneratorExhaustive(change_basis=True, multiedge=True)
     # circuit_generator = MergingStatesGenerator()
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits = np.array([5, 6, 7, 8, 9, 10, 11])
+    num_qubits = np.array([6, 7, 8, 9, 10, 11])
     num_amplitudes = num_qubits ** 2
-    out_col_name = 'mhs_nonlinear_alt'
+    state_inds = list(range(0, 100))
+    out_col_name = 'mhs_multi'
     # out_col_name = 'merging_states'
     data_folder_parent = 'data'
-    num_workers = 1
+    num_workers = 12
     check_fidelity = True
     optimization_level = 3
     basis_gates = ['rx', 'ry', 'rz', 'h', 'cx']
@@ -58,6 +59,7 @@ def run_prepare_state():
         states_file_path = os.path.join(data_folder, 'states.pkl')
         with open(states_file_path, 'rb') as f:
             state_list = pickle.load(f)
+        state_list = np.array(state_list)[state_inds]
 
         results = []
         if num_workers == 1:
@@ -70,7 +72,7 @@ def run_prepare_state():
 
         cx_counts_file_path = os.path.join(data_folder, 'cx_counts.csv')
         df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
-        df[out_col_name] = results
+        df.loc[state_inds, out_col_name] = results
         df.to_csv(cx_counts_file_path, index=False)
         print(f'Avg CX: {np.mean(df[out_col_name])}\n')
 
