@@ -1,15 +1,14 @@
 import os.path
 import pickle
 from functools import partial
-from itertools import product
-from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
 import qiskit
+from pebble import ProcessPool
 from tqdm import tqdm
 
-from src.state_circuit_generator import StateCircuitGenerator, QiskitDefaultGenerator, MergingStatesGenerator, MHSTreeGeneratorHeuristic, MHSTreeGeneratorExhaustive
+from src.state_circuit_generator import StateCircuitGenerator, MHSTreeGeneratorExhaustive
 from src.utilities.general import make_dict
 from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.validation import execute_circuit, get_state_vector, get_fidelity
@@ -40,7 +39,7 @@ def run_prepare_state():
     # circuit_generator = MergingStatesGenerator()
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits = np.array([6, 7, 8, 9, 10, 11])
+    num_qubits = np.array([11])
     num_amplitudes = num_qubits ** 2
     state_inds = list(range(0, 100))
     out_col_name = 'mhs_multi'
@@ -66,9 +65,19 @@ def run_prepare_state():
             for result in tqdm(map(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
                 results.append(result)
         else:
-            with Pool(num_workers) as pool:
-                for result in tqdm(pool.imap(process_func, state_list), total=len(state_list), smoothing=0, ascii=' █'):
-                    results.append(result)
+            with tqdm(total=len(state_list), smoothing=0, ascii=' █') as progress_bar:
+                with ProcessPool(num_workers) as pool:
+                    future_iter = pool.map(process_func, state_list, timeout=2 * 3600).result()
+                    while True:
+                        try:
+                            results.append(next(future_iter))
+                        except StopIteration:
+                            break
+                        except TimeoutError:
+                            results.append(0)
+                        except Exception:
+                            results.append(-1)
+                        progress_bar.update()
 
         cx_counts_file_path = os.path.join(data_folder, 'cx_counts.csv')
         df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()

@@ -10,3 +10,4 @@ qiskit~=1.2.4
 qiskit_aer~=0.14.0.1
 scipy~=1.13.0
 tqdm~=4.66.6
+Pebble~=5.1.1
