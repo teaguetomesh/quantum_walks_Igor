@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+from scipy import stats
 
 from general import Line, plot_general, save_figure
-from src.utilities.general import get_error_margin
+from src.utilities.general import get_error_margin_mean, get_error_margin_mean_sum
 
 
 def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num_amplitudes: Sequence[int], color_ind: int, marker_ind: int, label: str, figure_id: int,
@@ -18,7 +19,7 @@ def plot_cx_count_vs_num_qubits_line(method: str, num_qubits: Sequence[int], num
         data_path = f"../data/qubits_{n}/m_{m}/cx_counts.csv"
         df = pd.read_csv(data_path)
         ys.append(np.mean(df[method]))
-        error_margins.append(get_error_margin(df[method]))
+        error_margins.append(get_error_margin_mean(df[method]))
 
     if not add_error_margins:
         error_margins = None
@@ -75,19 +76,41 @@ def plot_qiskit_comparison():
     save_figure()
 
 
-def plot_gleinig_difference():
-    methods_to_compare = ["mhs_nonlinear", "merging_states"]
+def plot_methods_comparison():
+    methods = ["merging_states", "mhs_nonlinear", "mhs_nonlinear_alt", "mhs_multi"]
+    labels = ["Merging States", "Alvin's heuristic", "Exhaustive heuristic", "Multiedge (with exhaustive)"]
     num_qubits = np.array(range(5, 12))
     num_amplitudes = num_qubits ** 2
 
-    ys = []
-    for n, m in zip(num_qubits, num_amplitudes):
-        data_path = f"../data/qubits_{n}/m_{m}/cx_counts.csv"
-        df = pd.read_csv(data_path)
-        ys.append(np.mean(df[methods_to_compare[0]]) - np.mean(df[methods_to_compare[1]]))
+    for method_ind, method in enumerate(methods):
+        plot_cx_count_vs_num_qubits_line(method, num_qubits, num_amplitudes, color_ind=method_ind, marker_ind=0, label=labels[method_ind], figure_id=0, add_error_margins=True)
 
-    line = Line(num_qubits, ys)
-    plot_general([line], ("n", "CX difference"), boundaries=(4.75, 11.25, None, None))
+    save_figure()
+
+
+def plot_gleinig_difference():
+    reference = "merging_states"
+    methods = ["mhs_nonlinear", "mhs_nonlinear_alt", "mhs_multi"]
+    labels = ["Alvin's heuristic", "Exhaustive heuristic", "Multiedge (with exhaustive)"]
+
+    lines = []
+    for method_ind, method in enumerate(methods):
+        if method_ind == 1:
+            num_qubits = np.array(range(5, 12))
+        else:
+            num_qubits = np.array(range(5, 13))
+        num_amplitudes = num_qubits ** 2
+
+        ys = []
+        errors = []
+        for n, m in zip(num_qubits, num_amplitudes):
+            data_path = f"../data/qubits_{n}/m_{m}/cx_counts.csv"
+            df = pd.read_csv(data_path)
+            ys.append(np.mean(df[method]) - np.mean(df[reference]))
+            errors.append(get_error_margin_mean_sum([df[method], df[reference]]))
+
+        lines.append(Line(num_qubits, ys, errors, color=method_ind, label=labels[method_ind]))
+    plot_general(lines, ("n", "CX difference"), boundaries=(4.75, 12.25, None, None))
     save_figure()
 
 
@@ -95,6 +118,7 @@ if __name__ == "__main__":
     # plot_control_reduction_effect()
     # plot_walk_order_comparison()
     # plot_qiskit_comparison()
+    # plot_methods_comparison()
     plot_gleinig_difference()
 
     plt.show()

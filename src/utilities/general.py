@@ -69,9 +69,18 @@ def greedy_decision_tree(group_sizes: list[int], target_func: callable, ordered:
     return [node for node in last_layer if node.score == best_node.score]
 
 
-def get_error_margin(data: Sequence, confidence: float = 0.95) -> float:
+def get_error_margin_mean(data: Sequence, confidence: float = 0.95) -> float:
+    """ Calculates error margin (half of confidence interval) for the mean of data. Assumes large enough sample to justify normal distribution of mean. """
     z_val = stats.norm.ppf((1 + confidence) / 2)
-    return z_val * np.std(data, ddof=1) / len(data) ** 0.5
+    return z_val * np.std(data, ddof=1) / data.count() ** 0.5
+
+
+def get_error_margin_mean_sum(data_all: list[Sequence], confidence: float = 0.95) -> float:
+    """ Calculates error margin (half of confidence interval) for the sum of means of independent data. Assumes large enough sample to justify normal distribution of mean. """
+    z_val = stats.norm.ppf((1 + confidence) / 2)
+    mean_variances = [np.var(data, ddof=1) / data.count() for data in data_all]
+    std_err = np.sqrt(sum(mean_variances))
+    return z_val * std_err
 
 
 def array_to_str(arr: Sequence) -> str:
