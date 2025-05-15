@@ -5,10 +5,10 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import qiskit
-from pebble import ProcessPool
+from pebble import ProcessPool, ProcessExpired
 from tqdm import tqdm
 
-from src.state_circuit_generator import StateCircuitGenerator, MHSTreeGeneratorExhaustive
+from src.state_circuit_generator import StateCircuitGenerator, MHSTreeGeneratorExhaustive, MergingStatesGenerator, MHSTreeGeneratorHeuristic
 from src.utilities.general import make_dict
 from src.utilities.qiskit_utilities import remove_leading_cx_gates
 from src.utilities.validation import execute_circuit, get_state_vector, get_fidelity
@@ -34,20 +34,24 @@ def prepare_state(target_state: dict[str, complex], circuit_generator: StateCirc
 def run_prepare_state():
     """ An entry point. Prepares the states from the target folder, counts CX gates in the resulting circuits and writes the results to a csv file. """
     # circuit_generator = QiskitDefaultGenerator()
-    # circuit_generator = SingleEdgeGeneratorBackward(change_basis=True)
-    circuit_generator = MHSTreeGeneratorExhaustive(change_basis=True, multiedge=True)
     # circuit_generator = MergingStatesGenerator()
+    # circuit_generator = MHSTreeGeneratorHeuristic(multiedge=False)
+    circuit_generator = MHSTreeGeneratorExhaustive(change_basis=True, multiedge=True)
     # circuit_generator = MultiEdgeSparseGenerator(permutation_circuit_generator=PermutationCircuitGeneratorSparse())
 
-    num_qubits = np.array([11])
+    num_qubits = np.array([12])
     num_amplitudes = num_qubits ** 2
-    # state_inds = list(range(0, 100))
-    state_inds = "-1"
+    state_inds = list(range(60, 108))
+    nan_only = True
+    # out_col_name = "merging_states"
+    # out_col_name = "mhs_nonlinear"
     out_col_name = "mhs_multi"
-    # out_col_name = 'merging_states'
     data_folder_parent = "data"
     num_workers = 12
+    max_tasks = 1
+    timeout = 3 * 3600
     check_fidelity = True
+    max_states = 1000
     optimization_level = 3
     basis_gates = ["rx", "ry", "rz", "h", "cx"]
     process_func = partial(prepare_state, **make_dict(circuit_generator, basis_gates, optimization_level, check_fidelity))
@@ -61,9 +65,9 @@ def run_prepare_state():
         with open(states_file_path, "rb") as f:
             state_list = pickle.load(f)
 
-        if state_inds == "-1":
+        if nan_only:
             df = pd.read_csv(cx_counts_file_path)
-            state_inds = df[out_col_name] == -1
+            state_inds = np.where(np.isnan(df[out_col_name]) & np.isin(np.arange(len(df[out_col_name])), state_inds))[0]
         state_list = np.array(state_list)[state_inds]
 
         results = []
@@ -72,8 +76,8 @@ def run_prepare_state():
                 results.append(result)
         else:
             with tqdm(total=len(state_list), smoothing=0, ascii=" █") as progress_bar:
-                with ProcessPool(num_workers) as pool:
-                    future_iter = pool.map(process_func, state_list, timeout=2 * 3600).result()
+                with ProcessPool(num_workers, max_tasks=max_tasks) as pool:
+                    future_iter = pool.map(process_func, state_list, timeout=timeout).result()
                     while True:
                         try:
                             results.append(next(future_iter))
@@ -81,12 +85,15 @@ def run_prepare_state():
                             break
                         except TimeoutError:
                             results.append(0)
+                        except ProcessExpired as e:
+                            print(e)
+                            results.append(np.nan)
                         except Exception as e:
                             print(e)
                             results.append(-1)
                         progress_bar.update()
 
-        df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame()
+        df = pd.read_csv(cx_counts_file_path) if os.path.isfile(cx_counts_file_path) else pd.DataFrame(index=range(max_states))
         df.loc[state_inds, out_col_name] = results
         df.to_csv(cx_counts_file_path, index=False)
         print(f"Avg CX: {np.mean(df[out_col_name])}\n")

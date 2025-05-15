@@ -9,7 +9,7 @@ from qiskit.quantum_info import Statevector
 
 def generate_states():
     """ Generates sets of random sparse states. Writes the results to specified folder. """
-    num_qubits = np.array(list(range(8, 9)))
+    num_qubits = np.array([12])
     num_amplitudes = num_qubits ** 2
     num_states = 1000
 
