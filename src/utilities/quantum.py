@@ -27,7 +27,7 @@ def get_neighbor_ind(bases: ndarray, origin_ind: int, interaction_ind: int) -> i
     origin = bases[origin_ind]
     destination = origin ^ (np.arange(len(origin)) == interaction_ind)
     destination_ind = np.where(np.all(destination == bases, axis=1))[0]
-    if destination_ind:
+    if len(destination_ind) > 0:
         return destination_ind[0]
     return None
 
