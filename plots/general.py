@@ -1,20 +1,23 @@
 """ General plotting functions. """
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 import distinctipy
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse
+from matplotlib.text import Annotation
 from matplotlib.ticker import MultipleLocator
+from numpy import linalg
 from numpy import ndarray
 
-# colors = [(0, 0, 1), (1, 0, 0), (0, 1, 0), (0, 0, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
-colors = [(0, 0, 1), (1, 0, 0), (0, 1, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
-colors += distinctipy.get_colors(11, colors + [(1, 1, 1)], rng=0)
+colors = [(0, 0, 1), (1, 0, 0), (0, 0.5, 0), (0, 0, 0), (0, 0.75, 0.75), (0.75, 0, 0.75), (0.75, 0.75, 0)]
+colors += distinctipy.get_colors(10, colors + [(1, 1, 1)])
 markers = 'o*Xvs'
-marker_sizes = {'o': 8, '*': 10, 'X': 7, 'v': 5, 's': 5, 'none': 0}
-styles = ['-', '--']
+marker_sizes = {'o': 8, '*': 10, 'X': 10, 'v': 10, 's': 7, 'none': 0}
+styles = ['-', '--', '-.']
 
 
 @dataclass
@@ -22,6 +25,7 @@ class Line:
     """ Class that represents a line in a 2D plot. """
     xs: Sequence
     ys: Sequence
+    error_margins: Sequence = None
     color: tuple | int = colors[0]
     marker: str | int = 'o'
     style: str | int = '-'
@@ -39,6 +43,39 @@ class Line:
             self.marker = markers[self.marker]
         if isinstance(self.style, int):
             self.style = styles[self.style]
+
+
+@dataclass
+class AnnotationManager:
+    annotations: dict[(float, float), Annotation] = field(default_factory=dict)
+
+    def pick_event_handler(self, event):
+        """ Pick event handler that shows coordinates of a data point which was clicked. """
+        if not isinstance(event.artist, Line2D):
+            return
+
+        x_data = event.artist.get_xdata()[event.ind][0]
+        y_data = event.artist.get_ydata()[event.ind][0]
+        data_disp_coords = event.artist.get_transform().transform([x_data, y_data])
+        click_coords = np.array([event.mouseevent.x, event.mouseevent.y])
+        distance = linalg.norm(data_disp_coords - click_coords)
+        threshold_distance = event.artist.get_markersize() * event.artist.figure.dpi / 72 / 2
+        if distance > threshold_distance:
+            return
+
+        if (x_data, y_data) in self.annotations:
+            self.annotations[(x_data, y_data)].remove()
+            del self.annotations[(x_data, y_data)]
+        else:
+            bbox_settings = dict(boxstyle='round', fc=(1.0, 0.7, 0.7), ec='none')
+            arrow_settings = dict(arrowstyle='wedge, tail_width=1', fc=(1.0, 0.7, 0.7), ec='none', patchA=None, patchB=Ellipse((2, -1), 0.5, 0.5), relpos=(0.2, 0.5))
+            annotation = event.artist.axes.annotate(f'({x_data:.3g}, {y_data:.3g})', xy=(x_data, y_data), xytext=(20, 20), textcoords='offset points', size=10, bbox=bbox_settings,
+                                                    arrowprops=arrow_settings)
+            annotation.draggable()
+            self.annotations[(x_data, y_data)] = annotation
+
+        event.canvas.draw()
+        print(x_data, y_data, event.ind)
 
 
 def data_matrix_to_lines(data: ndarray, line_labels: list[str] = None, colors: list[int] = None, **kwargs) -> list[Line]:
@@ -62,22 +99,11 @@ def data_matrix_to_lines(data: ndarray, line_labels: list[str] = None, colors: l
     return lines
 
 
-def assign_distinct_colors(lines: list[Line]):
-    """
-    Assigns distinct colors to a collection of lines from `colors` variable.
-    :param lines: List of lines.
-    :return: None.
-    """
-    for i in range(len(lines)):
-        lines[i].color = colors[i]
-
-
-def plot_general(lines: list[Line], all_std_devs: list[np.array], axis_labels: tuple[str | None, str | None] = None, tick_multiples: tuple[float | None, float | None] = None,
+def plot_general(lines: list[Line], axis_labels: tuple[str | None, str | None] = None, tick_multiples: tuple[float | None, float | None] = None,
                  boundaries: tuple[float | None, float | None, float | None, float | None] = None, font_size: int = 20, legend_loc: str = 'best', figure_id: int = None, **kwargs):
     """
     Plots specified list of lines.
     :param lines: List of lines.
-    :param all_std_devs: List of std. dev.
     :param axis_labels: Labels for x and y axes.
     :param tick_multiples: Base multiples for ticks along x and y axes.
     :param boundaries: x min, x max, y min, y max floats defining plot boundaries.
@@ -88,19 +114,20 @@ def plot_general(lines: list[Line], all_std_devs: list[np.array], axis_labels: t
     """
     if figure_id is None:
         new_figure = True
-        plt.figure()
+        fig = plt.figure()
     else:
         new_figure = plt.fignum_exists(figure_id)
-        plt.figure(figure_id)
-
+        fig = plt.figure(figure_id)
+    manager = AnnotationManager()
+    fig.canvas.mpl_connect('pick_event', lambda event: manager.pick_event_handler(event))
     plt.rcParams.update({'font.size': font_size})
 
-    for line, std_dev in zip(lines, all_std_devs):
-        plt.errorbar(line.xs, line.ys, yerr=[1.96*elem/np.sqrt(1000) for elem in std_dev], color=line.color, marker=line.marker, linestyle=line.style, 
-                     markersize=marker_sizes[line.marker], label=line.label, capsize=7.0) #capsize is the size of error bar caps
-        handles, labels=plt.gca().get_legend_handles_labels()
-        handles=[h[0] for h in handles] #strips the error bars from the legend.
+    for line in lines:
+        plt.errorbar(line.xs, line.ys, yerr=line.error_margins, color=line.color, marker=line.marker, linestyle=line.style, markersize=marker_sizes[line.marker], label=line.label,
+                     capsize=5, picker=5)
         if line.label != '_nolabel_':
+            handles, labels = plt.gca().get_legend_handles_labels()
+            handles = [h[0] for h in handles]  # strips the error bars from the legend.
             plt.legend(handles, labels, loc=legend_loc, draggable=True)
 
     if axis_labels is not None:

@@ -2,7 +2,7 @@ import numpy as np
 import sys
 sys.path.append('../')
 from src.quantum_walks import PathFinderLinear, PathFinderSHP, PathFinderMST
-from src.walks_gates_conversion import PathConverter
+from src.state_preparation import StateCircuitGeneratorPath
 from qiskit import transpile
 from qiskit_aer import AerSimulator
 
@@ -46,7 +46,7 @@ def get_fidelity(state1, state2) -> float:
 
 def exec_state(target_state, path_finder, reduce_controls, optimization_level=3):
     path = path_finder.get_path(target_state)
-    circuit = PathConverter.convert_path_to_circuit(path, reduce_controls)
+    circuit = StateCircuitGeneratorPath.convert_path_to_circuit(path, reduce_controls)
     circuit = transpile(circuit, basis_gates=basis_gates, optimization_level=optimization_level)
     output_state_vector = execute_circuit(circuit)
     target_state_vector = get_state_vector(target_state)

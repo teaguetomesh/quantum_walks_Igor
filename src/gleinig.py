@@ -54,17 +54,15 @@ class MergeInitialize(InitializeSparse):
         self._get_num_qubits(params)
 
         super().__init__(self._name, self.num_qubits, params.items(), label=label)
-        self.original_basis=list(params.keys())
-        self.transformed_basis=list(params.keys())
-        self.path=[]
+        self.original_basis = list(params.keys())
+        self.transformed_basis = list(params.keys())
+        self.path = []
 
     def _define(self):
         self.definition = self._define_initialize()
 
     def _define_initialize(self):
-
         state_dict = dict(self.params)
-
         b_strings = list(state_dict.keys())
 
         n_qubits = len(b_strings[0])
@@ -83,35 +81,35 @@ class MergeInitialize(InitializeSparse):
             )
             b_strings = list(state_dict.keys())
 
-            idx1=self.transformed_basis.index(bitstr1)
-            idx2=self.transformed_basis.index(bitstr2)
+            idx1 = self.transformed_basis.index(bitstr1)
+            idx2 = self.transformed_basis.index(bitstr2)
             self.path.append([self.original_basis[idx1], self.original_basis[idx2]])
-            
-            print("transformed basis: ", self.transformed_basis)
 
+            # print("transformed basis: ", self.transformed_basis)
 
         b_string = b_strings.pop()
         for (bit_idx, bit) in enumerate(b_string):
             if bit == "1":
                 quantum_circuit.x(bit_idx)
 
-        bases=list(reversed(self.path))
-        print(bases)
+        # bases = list(reversed(self.path))
+        # print(bases)
         # fig = plt.figure()
-        graph = Graph()
-        for pair in bases:
-            val=sum([b1 != b2 for b1, b2 in zip(pair[0],pair[1])])
-            graph.add_edge(pair[0], pair[1], weight=val)
-        graph.graph["start"] = bases[0][0]
-        labels = nx.get_edge_attributes(graph,'weight')
-        pos = nx.spring_layout(graph)
-        nx.draw(graph, pos, with_labels=True, node_color="lightblue")
-        nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
+        # graph = Graph()
+        # for pair in bases:
+        #     val = sum([b1 != b2 for b1, b2 in zip(pair[0], pair[1])])
+        #     graph.add_edge(pair[0], pair[1], weight=val)
+        # graph.graph["start"] = bases[0][0]
+        # labels = nx.get_edge_attributes(graph, 'weight')
+        # pos = nx.spring_layout(graph)
+        # nx.draw(graph, pos, with_labels=True, node_color="lightblue")
+        # nx.draw_networkx_edge_labels(graph, pos, edge_labels=labels)
 
         # Save the figure to a file
-        plt.pyplot.savefig(f"graph_{bases[0]}.png")
-        plt.pyplot.clf()
+        # plt.pyplot.savefig(f"graph_{bases[0]}.png")
+        # plt.pyplot.clf()
         # quantum_circuit.reverse_ops().draw(output="mpl", fold=-1, filename=f"gleinig_{bases[0]}.jpg")
+
         return quantum_circuit.reverse_ops()
 
     @staticmethod
@@ -270,7 +268,7 @@ class MergeInitialize(InitializeSparse):
 
     @staticmethod
     def _update_state_dict_according_to_operation(
-        state_dict, operation, qubit_indexes, merge_strings=None
+            state_dict, operation, qubit_indexes, merge_strings=None
     ):
         """
         Updates the keys of the state_dict according to the operation being applied to the circuit
@@ -308,8 +306,8 @@ class MergeInitialize(InitializeSparse):
 
     # @staticmethod
     def _equalize_bit_string_states(self,
-        bitstr1, bitstr2, dif, state_dict, quantum_circuit
-    ):
+                                    bitstr1, bitstr2, dif, state_dict, quantum_circuit
+                                    ):
         """
         Applies operations to the states represented by bit strings bitstr1 and bitstr2 equalizing
         them at every qubit except the one in the dif index. And alters the bit strings and
@@ -339,14 +337,14 @@ class MergeInitialize(InitializeSparse):
                 state_dict = MergeInitialize._update_state_dict_according_to_operation(
                     state_dict, "cx", [dif, b_index]
                 )
-                self.transformed_basis=[self._apply_operation_to_bit_string(z1, "cx", [dif, b_index]) for z1 in self.transformed_basis]
+                self.transformed_basis = [self._apply_operation_to_bit_string(z1, "cx", [dif, b_index]) for z1 in self.transformed_basis]
 
         return bitstr1, bitstr2, state_dict, quantum_circuit
 
     # @staticmethod
     def _apply_not_gates_to_qubit_index_list(self,
-        bitstr1, bitstr2, dif_qubits, state_dict, quantum_circuit
-    ):
+                                             bitstr1, bitstr2, dif_qubits, state_dict, quantum_circuit
+                                             ):
         """
         Applies quantum not gate at the qubit at a given index, where the state represented by the
         bit string bitstr2 is different than '1' at index in diff_qubits.
@@ -368,11 +366,11 @@ class MergeInitialize(InitializeSparse):
                 state_dict = MergeInitialize._update_state_dict_according_to_operation(
                     state_dict, "x", b_index
                 )
-                self.transformed_basis=[self._apply_operation_to_bit_string(z1, "x", b_index) for z1 in self.transformed_basis]
+                self.transformed_basis = [self._apply_operation_to_bit_string(z1, "x", b_index) for z1 in self.transformed_basis]
         return bitstr1, bitstr2, state_dict, quantum_circuit
 
     def _preprocess_states(
-        self, bitstr1, bitstr2, dif, dif_qubits, state_dict, quantum_circuit
+            self, bitstr1, bitstr2, dif, dif_qubits, state_dict, quantum_circuit
     ):
         """
         Apply the operations on the basis states to prepare for merging bitstr1 and bitstr2.
@@ -398,7 +396,7 @@ class MergeInitialize(InitializeSparse):
             state_dict = self._update_state_dict_according_to_operation(
                 state_dict, "x", dif
             )
-            self.transformed_basis=[self._apply_operation_to_bit_string(z1, "x", dif) for z1 in self.transformed_basis]
+            self.transformed_basis = [self._apply_operation_to_bit_string(z1, "x", dif) for z1 in self.transformed_basis]
 
         (
             bitstr1,
