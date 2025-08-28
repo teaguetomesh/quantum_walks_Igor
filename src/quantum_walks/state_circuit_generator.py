@@ -13,12 +13,12 @@ from qiskit import QuantumCircuit
 from qiskit.circuit.library import RZGate, RXGate
 from qiskit.quantum_info import Statevector
 
-from src.gleinig import MergeInitialize
-from src.quantum_walks import PathSegment, PathFinder
-from src.utilities.general import greedy_decision_tree, array_to_str
-from src.utilities.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds, change_basis_if, change_basis, get_hamming_distance, \
+from quantum_walks.gleinig import MergeInitialize
+from quantum_walks.quantum_walks import PathSegment, PathFinder
+from quantum_walks.utils.general import greedy_decision_tree, array_to_str
+from quantum_walks.utils.quantum import find_min_control_set, get_cx_cost_rx, solve_minimum_hitting_set, get_different_inds, change_basis_if, change_basis, get_hamming_distance, \
     find_min_control_set_2, get_num_neighbors
-from src.utilities.validation import get_state_vector
+from quantum_walks.utils.validation import get_state_vector
 
 
 class StateCircuitGenerator(ABC):

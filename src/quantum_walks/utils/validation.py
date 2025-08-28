@@ -5,13 +5,14 @@ from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 
 
-def execute_circuit(circuit: QuantumCircuit) -> ndarray:
+def execute_circuit(input_circuit: QuantumCircuit) -> ndarray:
     """
     Executes transpiled circuit and returns the statevector output.
     :param circuit: Transpiled qiskit circuit to execute.
     :return: State vector at the end of the circuit.
     """
     sim = AerSimulator()
+    circuit = input_circuit.copy()
     circuit.save_statevector(label="end")
     result = sim.run(circuit).result()
     state = result.data(0)["end"].data
