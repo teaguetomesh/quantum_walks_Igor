@@ -1,0 +1,30 @@
+[project]
+name = "quantum_walks"
+description = "Efficient sparse state preparation via quantum walks"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+authors = [
+    { name = "Alvin Gonzales, Rebekah Herrman, Igor Gaidai, Ji Liu, Zain Saleem, and Infleqtion quantum software", email = "superstaq@infleqtion.com" },
+]
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { text = "N/A" }
+requires-python = ">=3.10.0"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+homepage = "https://github.com/teaguetomesh/quantum_walks_Igor.git"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools.dynamic.version]
+attr = "src._version.__version__"
+
+[tool.setuptools.dynamic.dependencies]
+file = ["requirements.txt"]
+
